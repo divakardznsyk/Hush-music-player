@@ -46,7 +46,7 @@ class PlaybackService : MediaSessionService() {
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            exo?.experimentalSetOffloadSchedulingEnabled(intent.action == Intent.ACTION_SCREEN_OFF)
+            setOffload(intent.action == Intent.ACTION_SCREEN_OFF)
         }
     }
 
@@ -64,24 +64,14 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true) // pause if headphones get unplugged
             .setWakeMode(C.WAKE_MODE_LOCAL)    // keep CPU awake only while playing local files
+            .experimentalSetDynamicSchedulingEnabled(true) // sleep between audio buffers when offloading
             .build()
         exo = player
 
-        // Battery: let the phone's audio DSP decode when it can (falls back automatically).
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setAudioOffloadPreferences(
-                TrackSelectionParameters.AudioOffloadPreferences.Builder()
-                    .setAudioOffloadMode(
-                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
-                    )
-                    .setIsSpeedChangeSupportRequired(true)
-                    .build()
-            )
-            .build()
-
-        // Battery: with the screen off, the player's loop sleeps between audio buffers.
+        // Battery: with the screen off, hand decoding to the phone's audio DSP (if it supports the
+        // format) and let the CPU sleep. With the screen on, decode normally so the UI stays smooth.
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        player.experimentalSetOffloadSchedulingEnabled(!pm.isInteractive)
+        setOffload(!pm.isInteractive)
         ContextCompat.registerReceiver(
             this,
             screenReceiver,
@@ -116,6 +106,21 @@ class PlaybackService : MediaSessionService() {
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider(this).apply { setSmallIcon(R.drawable.ic_notif) }
         )
+    }
+
+    private fun setOffload(enabled: Boolean) {
+        val p = exo ?: return
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setAudioOffloadPreferences(
+                TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                    .setAudioOffloadMode(
+                        if (enabled) TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+                        else TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+                    )
+                    .setIsSpeedChangeSupportRequired(true)
+                    .build()
+            )
+            .build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
