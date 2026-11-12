@@ -9,4 +9,11 @@
     <color name="red">#D71921</color>
     <color name="scrim">#B3000000</color>
     <color name="icon_bg">#F2F2F2</color>
+    <color name="mta_orange">#FF6319</color>
+    <color name="mta_yellow">#FCCC0A</color>
+    <color name="mta_green">#00933C</color>
+    <color name="mta_blue">#0039A6</color>
+    <color name="mta_purple">#B933AD</color>
+    <color name="mta_red">#EE352E</color>
+    <color name="mta_grey">#A7A9AC</color>
 </resources>
