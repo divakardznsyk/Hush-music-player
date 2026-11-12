@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#000000</color>
+    <color name="surface">#0E0E0F</color>
+    <color name="border">#262626</color>
+    <color name="text">#F2F2F2</color>
+    <color name="sub">#8C8C8C</color>
+    <color name="dim">#4A4A4A</color>
+    <color name="red">#D71921</color>
+    <color name="scrim">#B3000000</color>
+    <color name="icon_bg">#F2F2F2</color>
+</resources>
