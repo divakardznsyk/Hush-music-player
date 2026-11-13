@@ -10,15 +10,14 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.widget.RemoteViews
-import androidx.core.graphics.ColorUtils
 
 /**
- * 1x1 dark Braun-style widget. Swipe up / down for deck A or B; tap to play / pause it.
- * Never polls (updatePeriodMillis = 0); the service refreshes it only when playback changes.
+ * 1x1 subway-sign widget. Tap opens Hush. Easter egg: every song is a different subway line
+ * (its own letter and MTA colour). Playing = lit bullet, "LOCAL" (or "EXPRESS" if sped up).
+ * Paused = dark bullet, "NOT IN SERVICE". Never polls; the service refreshes it on changes.
  */
 class HushWidget : AppWidgetProvider() {
 
@@ -27,64 +26,74 @@ class HushWidget : AppWidgetProvider() {
     }
 
     companion object {
+        private const val LINES = "ACEBDFMNQRWGJZL1234567"
+
+        private fun lineColor(ch: Char): Int = when (ch) {
+            'A', 'C', 'E' -> 0xFF0039A6
+            'B', 'D', 'F', 'M' -> 0xFFFF6319
+            'N', 'Q', 'R', 'W' -> 0xFFFCCC0A
+            'G' -> 0xFF6CBE45
+            'J', 'Z' -> 0xFF996633
+            'L' -> 0xFFA7A9AC
+            '7' -> 0xFFB933AD
+            '4', '5', '6' -> 0xFF00933C
+            else -> 0xFFEE352E
+        }.toInt()
+
         fun build(context: Context): RemoteViews {
+            val prefs = context.getSharedPreferences("hush", Context.MODE_PRIVATE)
+            val playing = prefs.getBoolean("isPlaying", false) || prefs.getBoolean("isPlayingB", false)
+            val id = prefs.getString("lastId", "") ?: ""
+            val line = LINES[Math.floorMod(id.hashCode(), LINES.length)]
+            val express = prefs.getFloat("speed", 1f) > 1.05f
+
             val rv = RemoteViews(context.packageName, R.layout.widget_play)
-            rv.setRemoteAdapter(R.id.wStack, Intent(context, HushWidgetService::class.java))
-            // Tap = play / pause the deck on screen. Swipe up / down = switch deck.
-            val tpl = Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_TOGGLE)
-            rv.setPendingIntentTemplate(
-                R.id.wStack,
-                PendingIntent.getService(context, 0, tpl, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+            rv.setImageViewBitmap(R.id.wImg, draw(playing, line, express))
+            val open = Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            rv.setOnClickPendingIntent(
+                R.id.wRoot,
+                PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             )
             return rv
         }
 
-        fun draw(playing: Boolean, accent: Int, letter: String): Bitmap {
+        private fun draw(playing: Boolean, line: Char, express: Boolean): Bitmap {
             val s = 288
+            val cx = s / 2f
             val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
             val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-            // light warm-grey body
-            p.color = 0xFF121212.toInt()
+            // black station sign with a thin edge
+            p.color = Color.BLACK
             c.drawRoundRect(RectF(4f, 4f, s - 4f, s - 4f), 72f, 72f, p)
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 3f
+            p.color = 0xFF262626.toInt()
+            c.drawRoundRect(RectF(5f, 5f, s - 5f, s - 5f), 71f, 71f, p)
+            p.style = Paint.Style.FILL
 
-            // deck letter
-            p.color = 0xFF8C8C8C.toInt()
+            // the line bullet: lit while playing, dark when not
+            val col = lineColor(line)
+            p.color = if (playing) col else 0xFF1E1E1E.toInt()
+            c.drawCircle(cx, 112f, 68f, p)
+            p.color = if (playing) (if (line in "NQRWGL") Color.BLACK else Color.WHITE) else 0xFF5A5A5A.toInt()
             p.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
-            p.textSize = 34f
-            c.drawText(letter, 36f, 64f, p)
+            p.textAlign = Paint.Align.CENTER
+            p.textSize = 100f
+            c.drawText(line.toString(), cx, 112f + 35f, p)
 
-            // big key: deck colour while playing, grey when paused
-            val cx = s / 2f
-            val cy = 124f
-            val r = 62f
-            p.color = if (playing) accent else 0xFF2E2E2E.toInt()
-            c.drawCircle(cx, cy, r, p)
-            p.color = if (playing) (if (ColorUtils.calculateLuminance(accent) > 0.5) Color.BLACK else Color.WHITE) else 0xFFF2F2F2.toInt()
-            if (playing) {
-                c.drawRoundRect(RectF(cx - 24f, cy - 28f, cx - 8f, cy + 28f), 4f, 4f, p)
-                c.drawRoundRect(RectF(cx + 8f, cy - 28f, cx + 24f, cy + 28f), 4f, 4f, p)
-            } else {
-                val path = Path().apply {
-                    moveTo(cx - 16f, cy - 30f)
-                    lineTo(cx + 30f, cy)
-                    lineTo(cx - 16f, cy + 30f)
-                    close()
-                }
-                c.drawPath(path, p)
-            }
+            // service status
+            p.color = if (playing) 0xFFF2F2F2.toInt() else 0xFF8C8C8C.toInt()
+            p.textSize = 27f
+            p.letterSpacing = 0.08f
+            c.drawText(if (!playing) "NOT IN SERVICE" else if (express) "EXPRESS" else "LOCAL", cx, 218f, p)
 
-            // page dots (swipe up / down for the other deck)
-            p.color = 0xFF8C8C8C.toInt()
-            c.drawCircle(s - 30f, 120f, if (letter == "A") 8f else 5f, p)
-            c.drawCircle(s - 30f, 150f, if (letter == "B") 8f else 5f, p)
-            p.color = 0xFF262626.toInt()
-
-            // speaker grille
-            p.color = 0xFF262626.toInt()
-            for (row in 0 until 3) for (i in 0 until 7) {
-                c.drawCircle(60f + i * 28f, 214f + row * 22f, 5f, p)
+            // stops along the line
+            for (i in 0 until 5) {
+                p.color = if (playing) col else 0xFF262626.toInt()
+                c.drawCircle(cx + (i - 2) * 36f, 252f, 7f, p)
             }
             return bmp
         }
@@ -92,10 +101,7 @@ class HushWidget : AppWidgetProvider() {
         fun refresh(context: Context) {
             val mgr = AppWidgetManager.getInstance(context)
             val ids = mgr.getAppWidgetIds(ComponentName(context, HushWidget::class.java))
-            if (ids.isNotEmpty()) {
-                mgr.updateAppWidget(ids, build(context))
-                mgr.notifyAppWidgetViewDataChanged(ids, R.id.wStack)
-            }
+            if (ids.isNotEmpty()) mgr.updateAppWidget(ids, build(context))
         }
     }
 }

@@ -38,7 +38,6 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_SLEEP = "app.hush.player.SLEEP"
         const val EXTRA_MINUTES = "minutes"
         const val ID_B = "deckB"
-        const val ACTION_TOGGLE = "app.hush.player.TOGGLE_B"
     }
 
     private var sessionA: MediaSession? = null
@@ -132,7 +131,10 @@ class PlaybackService : MediaSessionService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (mediaItem != null) prefs.edit().putString("lastId", mediaItem.mediaId).apply()
+                if (mediaItem != null) {
+                    prefs.edit().putString("lastId", mediaItem.mediaId).apply()
+                    HushWidget.refresh(this@PlaybackService)
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -151,30 +153,6 @@ class PlaybackService : MediaSessionService() {
                 .build()
                 .apply { setSmallIcon(R.drawable.ic_notif) }
         )
-    }
-
-    /** Widget key A: play / pause, or resume your last song if nothing is loaded. */
-    private fun toggleA() {
-        val p = exoA ?: return
-        if (p.mediaItemCount > 0) {
-            if (p.isPlaying) p.pause() else p.play()
-            return
-        }
-        io.execute {
-            val items = try { Library.query(this) } catch (e: Exception) { emptyList() }
-            if (items.isEmpty()) return@execute
-            val last = prefs.getString("lastId", null)
-            var idx = items.indexOfFirst { it.mediaId == last }
-            val pos = if (idx >= 0) prefs.getLong("lastPos", 0L) else 0L
-            if (idx < 0) idx = 0
-            handler.post {
-                exoA?.run {
-                    setMediaItems(items, idx, pos)
-                    prepare()
-                    play()
-                }
-            }
-        }
     }
 
     private fun setOffload(enabled: Boolean) {
@@ -220,15 +198,6 @@ class PlaybackService : MediaSessionService() {
         if (controllerInfo.connectionHints.getString("deck") == "B") ensureDeckB() else sessionA
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_TOGGLE) {
-            if (intent.getIntExtra("deck", 1) == 2) {
-                val p = sessionB?.player
-                if (p != null && p.mediaItemCount > 0) {
-                    if (p.isPlaying) p.pause() else p.play()
-                } else if ((sessionA?.player?.mediaItemCount ?: 0) == 0) stopSelf()
-            } else toggleA()
-            return START_NOT_STICKY
-        }
         if (intent?.action == ACTION_SLEEP) {
             val minutes = intent.getIntExtra(EXTRA_MINUTES, 0)
             handler.removeCallbacks(sleepRunnable)

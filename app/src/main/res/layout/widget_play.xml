@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/wRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <StackView
-        android:id="@+id/wStack"
+    <ImageView
+        android:id="@+id/wImg"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:loopViews="true" />
+        android:contentDescription="Open Hush"
+        android:padding="4dp"
+        android:scaleType="fitCenter" />
 </FrameLayout>
