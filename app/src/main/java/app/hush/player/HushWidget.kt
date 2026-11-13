@@ -50,56 +50,48 @@ class HushWidget : AppWidgetProvider() {
 
         private fun draw(playing: Boolean, accent: Int): Bitmap {
             val s = 288
-            val cx = s / 2f
             val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
             val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-            // black sign with a thin edge
-            p.color = 0xFF0B0B0B.toInt()
-            c.drawRoundRect(RectF(2f, 2f, s - 2f, s - 2f), 64f, 64f, p)
+            p.color = 0xFF000000.toInt()
+            c.drawRoundRect(RectF(2f, 2f, s - 2f, s - 2f), 90f, 90f, p)
             p.style = Paint.Style.STROKE
             p.strokeWidth = 3f
-            p.color = 0xFF2A2A2A.toInt()
-            c.drawRoundRect(RectF(3f, 3f, s - 3f, s - 3f), 63f, 63f, p)
+            p.color = 0xFF262626.toInt()
+            c.drawRoundRect(RectF(3f, 3f, s - 3f, s - 3f), 89f, 89f, p)
             p.style = Paint.Style.FILL
 
-            // dot-matrix ring: lit in the accent colour while playing
-            val n = 36
-            val ringR = s * 0.405f
-            for (i in 0 until n) {
-                val a = i * 2.0 * Math.PI / n - Math.PI / 2
-                val x = cx + (ringR * Math.cos(a)).toFloat()
-                val y = cx + (ringR * Math.sin(a)).toFloat()
-                if (i == 0) {
-                    p.color = 0xFFF2F2F2.toInt()
-                    c.drawCircle(x, y, 6.5f, p)
+            // dot-matrix glyph (Nothing style): pause lit in the deck colour while playing, play in white when paused
+            val step = s * 0.07f
+            val x0 = s * 0.31f
+            val y0 = s * 0.31f
+            val lit = HashSet<Int>()
+            for (r in 1..7) {
+                if (playing) {
+                    for (col in intArrayOf(2, 3, 5, 6)) lit.add(r * 9 + col)
                 } else {
-                    p.color = if (playing) accent else 0xFF3A3A3A.toInt()
-                    c.drawCircle(x, y, 4.6f, p)
+                    val w = if (r <= 4) r - 1 else 7 - r
+                    for (col in 3..3 + w) lit.add(r * 9 + col)
                 }
+            }
+            for (r in 0 until 9) for (col in 0 until 9) {
+                val on = lit.contains(r * 9 + col)
+                p.color = if (on) (if (playing) accent else 0xFFF2F2F2.toInt()) else 0xFF222222.toInt()
+                c.drawCircle(x0 + col * step - 4 * step + 4 * step, y0 + r * step, step * 0.3f, p)
             }
 
-            // subway-style bullet with a play / pause glyph
-            val r = s * 0.27f
-            p.color = if (playing) accent else 0xFFF2F2F2.toInt()
-            c.drawCircle(cx, cx, r, p)
-            val fg = if (playing && ColorUtils.calculateLuminance(accent) <= 0.5) Color.WHITE else Color.BLACK
-            p.color = fg
-            if (playing) {
-                val w = r * 0.24f
-                val h = r * 0.62f
-                c.drawRoundRect(RectF(cx - r * 0.42f, cx - h, cx - r * 0.42f + w, cx + h), 5f, 5f, p)
-                c.drawRoundRect(RectF(cx + r * 0.42f - w, cx - h, cx + r * 0.42f, cx + h), 5f, 5f, p)
-            } else {
-                val path = Path().apply {
-                    moveTo(cx - r * 0.30f, cx - r * 0.56f)
-                    lineTo(cx + r * 0.58f, cx)
-                    lineTo(cx - r * 0.30f, cx + r * 0.56f)
-                    close()
-                }
-                c.drawPath(path, p)
-            }
+            // little subway bullet "A"
+            val br = s * 0.1f
+            val bx = s * 0.2f
+            val by = s * 0.2f
+            p.color = accent
+            c.drawCircle(bx, by, br, p)
+            p.color = if (ColorUtils.calculateLuminance(accent) > 0.5) Color.BLACK else Color.WHITE
+            p.textAlign = Paint.Align.CENTER
+            p.typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+            p.textSize = br * 1.25f
+            c.drawText("A", bx, by + br * 0.44f, p)
             return bmp
         }
 

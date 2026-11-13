@@ -142,6 +142,7 @@ class MainActivity : Activity() {
     private lateinit var searchBtn: ImageButton
     private lateinit var volBarLib: LineSlider
     private lateinit var volLabelLib: TextView
+    private lateinit var volName: TextView
     private lateinit var tabAll: TextView
     private lateinit var tabLiked: TextView
     private lateinit var reorderHint: TextView
@@ -252,8 +253,7 @@ class MainActivity : Activity() {
         // volumes: APP VOL (master, library) x deck volume (player). Ticks every 5%.
         volBarLib.hapticSteps = 20
         volBarPl.hapticSteps = 20
-        showMaster(master())
-        volBarLib.onChange = { f, _ -> setMaster(f) }
+        volBarLib.onChange = { f, _ -> setGain(cur, f) }
         volBarPl.onChange = { f, _ -> setGain(cur, f) }
 
         seek.onChange = { f, final -> seekTo(cur.ctrl, f, final) }
@@ -325,6 +325,12 @@ class MainActivity : Activity() {
         connect(d1)
         if (deck2WasAlive) connect(d2)
         requestAccess()
+        val crash = File(filesDir, "crash.txt")
+        if (crash.exists()) {
+            val msg = crash.readText().take(900)
+            crash.delete()
+            android.app.AlertDialog.Builder(this).setTitle("Last crash").setMessage(msg).setPositiveButton("OK", null).show()
+        }
     }
 
     private fun bindViews() {
@@ -334,6 +340,7 @@ class MainActivity : Activity() {
         searchBtn = v(R.id.searchBtn)
         volBarLib = v(R.id.volBarLib)
         volLabelLib = v(R.id.volLabelLib)
+        volName = v(R.id.volName)
         tabAll = v(R.id.tabAll)
         tabLiked = v(R.id.tabLiked)
         reorderHint = v(R.id.reorderHint)
@@ -550,40 +557,36 @@ class MainActivity : Activity() {
 
     private fun artistOf(item: MediaItem?): String =
         item?.mediaMetadata?.extras?.getString("artist")
-            ?: item?.mediaMetadata?.artist?.toString()?.removePrefix("DECK 2 · ")
+            ?: item?.mediaMetadata?.artist?.toString()?.removePrefix("DECK B · ")
             ?: ""
 
     // ------------------------------------------------------------------------------------------
     // volume: APP VOL (master) x deck volume
     // ------------------------------------------------------------------------------------------
 
-    private fun master() = prefs.getFloat("master", prefs.getFloat("volume", 1f))
-    private fun gain(d: Deck) = prefs.getFloat("gain${d.idx}", 1f)
-    private fun applyVolume(d: Deck) {
-        d.ctrl?.volume = (master() * gain(d)).coerceIn(0f, 1f)
-    }
+    private fun nm(d: Deck) = if (d.idx == 1) "A" else "B"
+    private fun gain(d: Deck) = prefs.getFloat(
+        "gain${d.idx}", if (d.idx == 1) prefs.getFloat("master", prefs.getFloat("volume", 1f)) else 1f
+    )
 
-    private fun setMaster(f: Float) {
-        prefs.edit().putFloat("master", f).apply()
-        decks().forEach { applyVolume(it) }
-        volLabelLib.text = pct(f)
+    private fun applyVolume(d: Deck) {
+        d.ctrl?.volume = gain(d).coerceIn(0f, 1f)
     }
 
     private fun setGain(d: Deck, f: Float) {
         prefs.edit().putFloat("gain${d.idx}", f).apply()
         applyVolume(d)
-        volLabelPl.text = pct(f)
+        showGain()
     }
 
-    private fun showMaster(f: Float) {
-        if (!volBarLib.isDragging) volBarLib.fraction = f
-        volLabelLib.text = pct(f)
-    }
-
+    /** Both volume bars always show the selected deck's own volume. */
     private fun showGain() {
         val g = gain(cur)
         if (!volBarPl.isDragging) volBarPl.fraction = g
+        if (!volBarLib.isDragging) volBarLib.fraction = g
         volLabelPl.text = pct(g)
+        volLabelLib.text = pct(g)
+        volName.text = "VOL " + nm(cur)
     }
 
     // ------------------------------------------------------------------------------------------
@@ -719,7 +722,7 @@ class MainActivity : Activity() {
     private fun loadDeck2(item: MediaItem) {
         val tagged = item.buildUpon()
             .setMediaMetadata(
-                item.mediaMetadata.buildUpon().setArtist("DECK 2 · " + artistOf(item)).build()
+                item.mediaMetadata.buildUpon().setArtist("DECK B · " + artistOf(item)).build()
             )
             .build()
         connect(d2) { c ->
@@ -738,7 +741,7 @@ class MainActivity : Activity() {
 
     private fun startPick(d: Deck) {
         pickDeck = d
-        pickBanner.text = "PICK A SONG FOR DECK ${d.idx}   ✕"
+        pickBanner.text = "PICK A SONG FOR DECK ${nm(d)}   ✕"
         pickBanner.background = rect(d.accent, 16f)
         pickBanner.setTextColor(d.onAccent)
         pickBanner.visibility = View.VISIBLE
@@ -775,7 +778,6 @@ class MainActivity : Activity() {
 
     private fun selectDeck(d: Deck) {
         cur = d
-        if (d === d2) connect(d2) // lets deck 2's controls work right away
         applyTheme()
         syncTrack()
         syncPlay()
@@ -948,15 +950,10 @@ class MainActivity : Activity() {
         pageMenu.addView(menuRow("1", "Speed", menuSpeedVal) { showPage(1) })
         pageMenu.addView(menuRow("2", "Sleep timer", menuSleepVal) { showPage(2) })
         pageMenu.addView(menuRow("3", "Deck colours", dots) { showPage(3) })
-        if (cur.hasItem) {
-            pageMenu.addView(menuRow("4", "Eject deck ${cur.idx}", View(this)) {
-                cur.ctrl?.let {
-                    it.stop()
-                    it.clearMediaItems()
-                }
-                closeSheet()
-            })
-        }
+        pageMenu.addView(menuRow("E", "Edit song", valueText()) {
+            val it = cur.ctrl?.currentMediaItem
+            if (it == null) closeSheet() else openEdit(all.firstOrNull { a -> a.mediaId == it.mediaId } ?: it)
+        })
     }
 
     private fun chip(text: String, onClick: () -> Unit): TextView {
@@ -984,7 +981,7 @@ class MainActivity : Activity() {
     private fun buildAccentRows() {
         for (d in decks()) {
             accentRows.addView(TextView(this).apply {
-                text = "DECK ${d.idx}"
+                text = "DECK ${nm(d)}"
                 typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
                 letterSpacing = 0.08f
                 textSize = 11f
@@ -1019,10 +1016,10 @@ class MainActivity : Activity() {
         trackArtist.text = artistOf(item)
         trackRows.removeAllViews()
         val pos = { shown.indexOfFirst { it.mediaId == item.mediaId } }
-        trackRows.addView(menuRow("1", "Play on deck 1", View(this)) {
+        trackRows.addView(menuRow("A", "Play on deck A", View(this)) {
             closeSheet(); playOn(d1, pos())
         })
-        trackRows.addView(menuRow("2", "Play on deck 2", View(this)) {
+        trackRows.addView(menuRow("B", "Play on deck B", View(this)) {
             closeSheet(); playOn(d2, pos())
         })
         trackRows.addView(menuRow("3", "Edit info", View(this)) { openEdit(item) })
@@ -1118,7 +1115,7 @@ class MainActivity : Activity() {
         for (d in decks()) {
             val c = d.ctrl ?: continue
             val item = if (d === d2) fresh.buildUpon().setMediaMetadata(
-                fresh.mediaMetadata.buildUpon().setArtist("DECK 2 · " + artistOf(fresh)).build()
+                fresh.mediaMetadata.buildUpon().setArtist("DECK B · " + artistOf(fresh)).build()
             ).build() else fresh
             for (i in 0 until c.mediaItemCount) {
                 if (c.getMediaItemAt(i).mediaId != id) continue
@@ -1178,7 +1175,7 @@ class MainActivity : Activity() {
         val item = d.ctrl?.currentMediaItem
         mini.visibility = View.VISIBLE
         miniTitle.text = titleOf(item)
-        miniSub.text = (if (d === d2) "DECK 2 · " else "") + artistOf(item)
+        miniSub.text = (if (d === d2) "DECK B · " else "") + artistOf(item)
         miniPlay.background = oval(d.accent)
         miniPlay.setColorFilter(d.onAccent)
         miniPlay.setImageResource(if (d.playing) R.drawable.ic_pause else R.drawable.ic_play)
