@@ -16,7 +16,7 @@ import android.widget.RemoteViews
 
 /**
  * 1x1 subway-sign widget. Tap opens Hush. Easter egg: every song is a different subway line
- * (its own letter and MTA colour). Playing = lit bullet, "LOCAL" (or "EXPRESS" if sped up).
+ * (its own letter and MTA colour). Playing = lit bullet, "LOCAL" (or "EXPRESS" for lossless files).
  * Paused = dark bullet, "NOT IN SERVICE". Never polls; the service refreshes it on changes.
  */
 class HushWidget : AppWidgetProvider() {
@@ -45,7 +45,7 @@ class HushWidget : AppWidgetProvider() {
             val playing = prefs.getBoolean("isPlaying", false) || prefs.getBoolean("isPlayingB", false)
             val id = prefs.getString("lastId", "") ?: ""
             val line = LINES[Math.floorMod(id.hashCode(), LINES.length)]
-            val express = prefs.getFloat("speed", 1f) > 1.05f
+            val express = prefs.getBoolean("lossless", false)
 
             val rv = RemoteViews(context.packageName, R.layout.widget_play)
             rv.setImageViewBitmap(R.id.wImg, draw(playing, line, express))
@@ -86,14 +86,14 @@ class HushWidget : AppWidgetProvider() {
 
             // service status
             p.color = if (playing) 0xFFF2F2F2.toInt() else 0xFF8C8C8C.toInt()
-            p.textSize = 27f
-            p.letterSpacing = 0.08f
-            c.drawText(if (!playing) "NOT IN SERVICE" else if (express) "EXPRESS" else "LOCAL", cx, 218f, p)
+            p.textSize = 21f
+            p.letterSpacing = 0.04f
+            c.drawText(if (!playing) "NOT IN SERVICE" else if (express) "EXPRESS" else "LOCAL", cx, 214f, p)
 
             // stops along the line
-            for (i in 0 until 5) {
+            for (i in 0 until 5) { // lossless = express: skips every stop, loses nothing
                 p.color = if (playing) col else 0xFF262626.toInt()
-                c.drawCircle(cx + (i - 2) * 36f, 252f, 7f, p)
+                c.drawCircle(cx + (i - 2) * 34f, 246f, 6f, p)
             }
             return bmp
         }

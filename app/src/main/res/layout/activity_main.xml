@@ -452,6 +452,20 @@
             android:textColor="@color/sub"
             android:textSize="12sp" />
 
+        <TextView
+            android:id="@+id/nextStop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-black"
+            android:letterSpacing="0.06"
+            android:maxLines="1"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:textColor="@color/dim"
+            android:textSize="11sp" />
+
         <app.hush.player.LineSlider
             android:id="@+id/seek"
             android:layout_width="match_parent"

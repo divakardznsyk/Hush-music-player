@@ -168,6 +168,7 @@ class MainActivity : Activity() {
     private lateinit var nowSub: TextView
     private lateinit var heartBtn: ImageButton
     private lateinit var fmtLine: TextView
+    private lateinit var nextStop: TextView
     private lateinit var seek: LineSlider
     private lateinit var timeNow: TextView
     private lateinit var timeLeft: TextView
@@ -365,6 +366,7 @@ class MainActivity : Activity() {
         nowSub = v(R.id.nowSub)
         heartBtn = v(R.id.heartBtn)
         fmtLine = v(R.id.fmtLine)
+        nextStop = v(R.id.nextStop)
         seek = v(R.id.seek)
         timeNow = v(R.id.timeNow)
         timeLeft = v(R.id.timeLeft)
@@ -1165,6 +1167,18 @@ class MainActivity : Activity() {
         }
         updateHeart()
         updateInfoText()
+        updateNext()
+    }
+
+    /** Subway announcement: the next song in the queue. */
+    private fun updateNext() {
+        val c = cur.ctrl
+        nextStop.text = when {
+            c == null || c.currentMediaItem == null -> ""
+            c.repeatMode == Player.REPEAT_MODE_ONE -> "LOOPING THIS STOP"
+            c.nextMediaItemIndex != C.INDEX_UNSET -> "NEXT STOP  ·  " + titleOf(c.getMediaItemAt(c.nextMediaItemIndex)).uppercase()
+            else -> "LAST STOP"
+        }
     }
 
     private fun syncMini() {
@@ -1249,6 +1263,7 @@ class MainActivity : Activity() {
             if (repeat == Player.REPEAT_MODE_ONE) R.drawable.ic_repeat_one else R.drawable.ic_repeat
         )
         repeatBtn.setColorFilter(if (repeat == Player.REPEAT_MODE_OFF) dim else cur.accent)
+        updateNext()
     }
 
     private fun updateHeart() {

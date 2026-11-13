@@ -132,7 +132,8 @@ class PlaybackService : MediaSessionService() {
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (mediaItem != null) {
-                    prefs.edit().putString("lastId", mediaItem.mediaId).apply()
+                    prefs.edit().putString("lastId", mediaItem.mediaId)
+                        .putBoolean("lossless", mediaItem.mediaMetadata.extras?.getBoolean("lossless") ?: false).apply()
                     HushWidget.refresh(this@PlaybackService)
                 }
             }
