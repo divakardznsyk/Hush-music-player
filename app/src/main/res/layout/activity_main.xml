@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -46,21 +47,27 @@
                     android:textSize="40sp" />
             </LinearLayout>
 
+            <!-- deck switch: subway bullets -->
             <TextView
-                android:id="@+id/offlineChip"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_chip"
-                android:fontFamily="sans-serif-medium"
-                android:letterSpacing="0.1"
-                android:paddingStart="12dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="6dp"
-                android:text="OFFLINE"
-                android:textColor="@color/text"
-                android:textSize="10sp" />
+                android:id="@+id/libBullet1"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:text="1"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/libBullet2"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:text="2"
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/searchBtn"
@@ -73,7 +80,7 @@
                 android:src="@drawable/ic_search" />
         </LinearLayout>
 
-        <!-- app volume -->
+        <!-- app volume (master for both decks) -->
         <LinearLayout
             android:id="@+id/volCard"
             android:layout_width="match_parent"
@@ -152,25 +159,16 @@
                 android:text="LIKED"
                 android:textSize="12sp" />
 
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
             <TextView
-                android:id="@+id/shuffleAll"
-                android:layout_width="wrap_content"
+                android:id="@+id/reorderHint"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:background="@drawable/bg_chip"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="0.08"
-                android:paddingStart="16dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:text="SHUFFLE"
-                android:textColor="@color/text"
-                android:textSize="12sp" />
+                android:layout_weight="1"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="end"
+                android:text="Hold a song: drag to reorder"
+                android:textColor="#4A4A4A"
+                android:textSize="11sp" />
         </LinearLayout>
 
         <TextView
@@ -184,7 +182,6 @@
             android:gravity="center"
             android:letterSpacing="0.06"
             android:padding="14dp"
-            android:text="PICK A SONG FOR DECK B   ✕"
             android:textSize="13sp"
             android:visibility="gone" />
 
@@ -215,16 +212,16 @@
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <ListView
+            <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/list"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:cacheColorHint="#00000000"
-                android:divider="@null"
-                android:dividerHeight="0dp"
-                android:fastScrollEnabled="true"
-                android:listSelector="@android:color/transparent"
-                android:overScrollMode="never" />
+                android:overScrollMode="never"
+                app:fastScrollEnabled="true"
+                app:fastScrollHorizontalThumbDrawable="@drawable/fs_thumb"
+                app:fastScrollHorizontalTrackDrawable="@drawable/fs_track"
+                app:fastScrollVerticalThumbDrawable="@drawable/fs_thumb"
+                app:fastScrollVerticalTrackDrawable="@drawable/fs_track" />
 
             <TextView
                 android:id="@+id/empty"
@@ -298,7 +295,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- ===================== DECK A (main player) ===================== -->
+    <!-- ===================== PLAYER (deck 1 / deck 2) ===================== -->
     <LinearLayout
         android:id="@+id/player"
         android:layout_width="match_parent"
@@ -310,7 +307,7 @@
         android:paddingBottom="14dp"
         android:visibility="gone">
 
-        <!-- top bar -->
+        <!-- top bar: back, deck switch, info, menu -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -332,19 +329,30 @@
                 android:src="@drawable/ic_back" />
 
             <TextView
-                android:id="@+id/bulletA"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:id="@+id/bullet1"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
                 android:fontFamily="sans-serif-black"
                 android:gravity="center"
-                android:text="A"
-                android:textSize="16sp" />
+                android:text="1"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/bullet2"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:text="2"
+                android:textSize="18sp" />
 
             <TextView
                 android:id="@+id/infoText"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
+                android:layout_marginStart="14dp"
                 android:layout_weight="1"
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="0.06"
@@ -363,7 +371,6 @@
                 android:src="@drawable/ic_menu" />
         </LinearLayout>
 
-        <!-- vinyl -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
@@ -380,7 +387,6 @@
                 android:layout_gravity="center" />
         </FrameLayout>
 
-        <!-- title + like -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -445,7 +451,6 @@
             android:textColor="@color/sub"
             android:textSize="12sp" />
 
-        <!-- seek -->
         <app.hush.player.LineSlider
             android:id="@+id/seek"
             android:layout_width="match_parent"
@@ -479,7 +484,7 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <!-- app volume -->
+        <!-- this deck's volume (multiplied by APP VOL) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -516,7 +521,6 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <!-- shuffle / repeat -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -550,7 +554,6 @@
                 android:src="@drawable/ic_repeat" />
         </LinearLayout>
 
-        <!-- big transport blocks -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -597,236 +600,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- ===================== DECK B ===================== -->
-    <LinearLayout
-        android:id="@+id/deck"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/bg"
-        android:clickable="true"
-        android:focusable="true"
-        android:orientation="vertical"
-        android:paddingBottom="14dp"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:layout_marginTop="6dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp">
-
-            <ImageButton
-                android:id="@+id/deckBack"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Back"
-                android:padding="12dp"
-                android:rotation="-90"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_back" />
-
-            <TextView
-                android:id="@+id/bulletB"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:fontFamily="sans-serif-black"
-                android:gravity="center"
-                android:text="B"
-                android:textSize="16sp" />
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="0.06"
-                android:text="DECK B  ·  LOOPING"
-                android:textColor="@color/sub"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:paddingStart="56dp"
-            android:paddingTop="4dp"
-            android:paddingEnd="56dp"
-            android:paddingBottom="8dp">
-
-            <app.hush.player.DiscView
-                android:id="@+id/deckDisc"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_gravity="center" />
-        </FrameLayout>
-
-        <TextView
-            android:id="@+id/deckTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-black"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:textColor="@color/text"
-            android:textSize="26sp" />
-
-        <TextView
-            android:id="@+id/deckSub"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:textColor="@color/sub"
-            android:textSize="16sp" />
-
-        <TextView
-            android:id="@+id/deckFmt"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.06"
-            android:maxLines="1"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp"
-            android:textColor="@color/sub"
-            android:textSize="12sp" />
-
-        <app.hush.player.LineSlider
-            android:id="@+id/deckSeek"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginTop="6dp"
-            android:layout_marginEnd="10dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="24dp"
-            android:paddingEnd="24dp">
-
-            <TextView
-                android:id="@+id/deckTimeNow"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:fontFamily="sans-serif-black"
-                android:textColor="@color/text"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/deckTimeLeft"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-medium"
-                android:textColor="@color/sub"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:layout_marginTop="12dp"
-            android:layout_marginEnd="16dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="0.08"
-                android:text="VOL"
-                android:textColor="@color/sub"
-                android:textSize="12sp" />
-
-            <app.hush.player.LineSlider
-                android:id="@+id/deckVol"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/deckVolLabel"
-                android:layout_width="44dp"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-black"
-                android:gravity="end"
-                android:textColor="@color/text"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="20dp"
-            android:layout_marginTop="10dp"
-            android:layout_marginEnd="20dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/deckPick"
-                android:layout_width="0dp"
-                android:layout_height="84dp"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_block"
-                android:fontFamily="sans-serif-black"
-                android:gravity="center"
-                android:letterSpacing="0.06"
-                android:text="PICK\nSONG"
-                android:textColor="@color/text"
-                android:textSize="14sp" />
-
-            <ImageButton
-                android:id="@+id/deckPlay"
-                android:layout_width="0dp"
-                android:layout_height="84dp"
-                android:layout_marginStart="5dp"
-                android:layout_marginEnd="5dp"
-                android:layout_weight="1.3"
-                android:contentDescription="Play or pause deck B"
-                android:padding="26dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_play" />
-
-            <TextView
-                android:id="@+id/deckEject"
-                android:layout_width="0dp"
-                android:layout_height="84dp"
-                android:layout_marginStart="5dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_block"
-                android:fontFamily="sans-serif-black"
-                android:gravity="center"
-                android:letterSpacing="0.06"
-                android:text="EJECT"
-                android:textColor="@color/text"
-                android:textSize="14sp" />
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- ===================== MENU / SPEED / SLEEP / ACCENT SHEET ===================== -->
+    <!-- ===================== SHEET: menu / speed / sleep / accent / track / edit ===================== -->
     <FrameLayout
         android:id="@+id/sheetRoot"
         android:layout_width="match_parent"
@@ -851,14 +625,12 @@
             android:paddingEnd="24dp"
             android:paddingBottom="30dp">
 
-            <!-- page 0: menu (rows are added in code) -->
             <LinearLayout
                 android:id="@+id/pageMenu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <!-- page 1: speed -->
             <LinearLayout
                 android:id="@+id/pageSpeed"
                 android:layout_width="match_parent"
@@ -901,7 +673,6 @@
                     android:orientation="horizontal" />
             </LinearLayout>
 
-            <!-- page 2: sleep timer -->
             <LinearLayout
                 android:id="@+id/pageSleep"
                 android:layout_width="match_parent"
@@ -931,12 +702,11 @@
                     android:textSize="56sp" />
 
                 <TextView
-                    android:id="@+id/sleepHint"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:fontFamily="sans-serif-medium"
-                    android:text="Music pauses on its own when time runs out."
+                    android:text="Both decks pause when time runs out."
                     android:textColor="@color/sub"
                     android:textSize="13sp" />
 
@@ -948,7 +718,6 @@
                     android:orientation="horizontal" />
             </LinearLayout>
 
-            <!-- page 3: accent colour -->
             <LinearLayout
                 android:id="@+id/pageAccent"
                 android:layout_width="match_parent"
@@ -964,17 +733,197 @@
                     android:letterSpacing="0.08"
                     android:paddingTop="4dp"
                     android:paddingBottom="12dp"
-                    android:text="‹  ACCENT COLOUR"
+                    android:text="‹  DECK COLOURS"
                     android:textColor="@color/sub"
                     android:textSize="13sp" />
 
                 <LinearLayout
-                    android:id="@+id/accentRow"
+                    android:id="@+id/accentRows"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:orientation="horizontal" />
+                    android:orientation="vertical" />
             </LinearLayout>
+
+            <!-- long-press menu for a song (rows added in code) -->
+            <LinearLayout
+                android:id="@+id/pageTrack"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/trackTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-black"
+                    android:maxLines="1"
+                    android:textColor="@color/text"
+                    android:textSize="24sp" />
+
+                <TextView
+                    android:id="@+id/trackArtist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1"
+                    android:textColor="@color/sub"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:id="@+id/trackRows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+            <!-- edit song info -->
+            <ScrollView
+                android:id="@+id/pageEdit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:overScrollMode="never"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/editBack"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-black"
+                        android:letterSpacing="0.08"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="12dp"
+                        android:text="‹  EDIT SONG"
+                        android:textColor="@color/sub"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <app.hush.player.DiscView
+                            android:id="@+id/editCover"
+                            android:layout_width="88dp"
+                            android:layout_height="88dp" />
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="18dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/btnCover"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_chip"
+                                android:fontFamily="sans-serif-black"
+                                android:letterSpacing="0.06"
+                                android:paddingStart="16dp"
+                                android:paddingTop="10dp"
+                                android:paddingEnd="16dp"
+                                android:paddingBottom="10dp"
+                                android:text="CHANGE COVER"
+                                android:textColor="@color/text"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/btnReset"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:background="@drawable/bg_chip"
+                                android:fontFamily="sans-serif-black"
+                                android:letterSpacing="0.06"
+                                android:paddingStart="16dp"
+                                android:paddingTop="10dp"
+                                android:paddingEnd="16dp"
+                                android:paddingBottom="10dp"
+                                android:text="RESET TO ORIGINAL"
+                                android:textColor="@color/text"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:fontFamily="sans-serif-black"
+                        android:letterSpacing="0.08"
+                        android:text="SONG NAME"
+                        android:textColor="@color/sub"
+                        android:textSize="11sp" />
+
+                    <EditText
+                        android:id="@+id/editTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_field"
+                        android:fontFamily="sans-serif-medium"
+                        android:inputType="textCapWords"
+                        android:maxLines="1"
+                        android:padding="14dp"
+                        android:textColor="@color/text"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:fontFamily="sans-serif-black"
+                        android:letterSpacing="0.08"
+                        android:text="ARTIST"
+                        android:textColor="@color/sub"
+                        android:textSize="11sp" />
+
+                    <EditText
+                        android:id="@+id/editArtist"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:background="@drawable/bg_field"
+                        android:fontFamily="sans-serif-medium"
+                        android:inputType="textCapWords"
+                        android:maxLines="1"
+                        android:padding="14dp"
+                        android:textColor="@color/text"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/btnSave"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:fontFamily="sans-serif-black"
+                        android:gravity="center"
+                        android:letterSpacing="0.08"
+                        android:padding="16dp"
+                        android:text="SAVE"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:gravity="center"
+                        android:text="Changes stay inside Hush. Your music files are not touched."
+                        android:textColor="@color/dim"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </ScrollView>
         </FrameLayout>
     </FrameLayout>
 </FrameLayout>

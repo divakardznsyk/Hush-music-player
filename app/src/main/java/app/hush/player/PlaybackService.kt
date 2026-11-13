@@ -25,11 +25,11 @@ import java.util.concurrent.Executors
 /**
  * Owns the players so music keeps going with the screen off / app closed.
  *
- * - Deck A is the main player. Deck B is a second, independent player that is created only when
+ * - Deck 1 (internally A) is the main player. Deck 2 (internally B) is a second, independent player that is created only when
  *   you first use it (looping, with its own volume).
  * - player.volume is a gain applied to THIS app's audio only (independent of phone volume).
  * - Volume / speed are saved so they survive restarts.
- * - Battery: hardware audio offload on Deck A when the screen is off, no wake-ups when idle.
+ * - Battery: hardware audio offload on Deck 1 when the screen is off, no wake-ups when idle.
  * - There is no INTERNET permission in the manifest, so this service cannot use data or Wi-Fi.
  */
 class PlaybackService : MediaSessionService() {
@@ -93,7 +93,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).apply()
+        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).putBoolean("deck2Alive", false).apply()
         HushWidget.refresh(this)
 
         val player = ExoPlayer.Builder(this)
@@ -167,7 +167,7 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    /** Deck B: created the first time the app connects to it. Loops, own volume, own notification. */
+    /** Deck 2: created the first time the app connects to it. Loops, own volume, own notification. */
     private fun ensureDeckB(): MediaSession {
         sessionB?.let { return it }
         val p = ExoPlayer.Builder(this)
@@ -182,6 +182,7 @@ class PlaybackService : MediaSessionService() {
                 prefs.edit().putFloat("volumeB", volume).apply()
             }
         })
+        prefs.edit().putBoolean("deck2Alive", true).apply()
         return MediaSession.Builder(this, p).setId(ID_B).build().also { sessionB = it }
     }
 
@@ -211,7 +212,7 @@ class PlaybackService : MediaSessionService() {
             unregisterReceiver(screenReceiver)
         } catch (_: IllegalArgumentException) {
         }
-        prefs.edit().putBoolean("isPlaying", false).apply()
+        prefs.edit().putBoolean("isPlaying", false).putBoolean("deck2Alive", false).apply()
         HushWidget.refresh(this)
         sessionA?.run {
             player.release()
