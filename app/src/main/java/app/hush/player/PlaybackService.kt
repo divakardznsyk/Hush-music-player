@@ -38,6 +38,7 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_SLEEP = "app.hush.player.SLEEP"
         const val EXTRA_MINUTES = "minutes"
         const val ID_B = "deckB"
+        const val ACTION_TOGGLE_B = "app.hush.player.TOGGLE_B"
     }
 
     private var sessionA: MediaSession? = null
@@ -93,7 +94,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).putBoolean("deck2Alive", false).apply()
+        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).putBoolean("deck2Alive", false).putBoolean("isPlayingB", false).apply()
         HushWidget.refresh(this)
 
         val player = ExoPlayer.Builder(this)
@@ -181,6 +182,11 @@ class PlaybackService : MediaSessionService() {
             override fun onVolumeChanged(volume: Float) {
                 prefs.edit().putFloat("volumeB", volume).apply()
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                prefs.edit().putBoolean("isPlayingB", isPlaying).apply()
+                HushWidget.refresh(this@PlaybackService)
+            }
         })
         prefs.edit().putBoolean("deck2Alive", true).apply()
         return MediaSession.Builder(this, p).setId(ID_B).build().also { sessionB = it }
@@ -190,6 +196,13 @@ class PlaybackService : MediaSessionService() {
         if (controllerInfo.connectionHints.getString("deck") == "B") ensureDeckB() else sessionA
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_TOGGLE_B) {
+            val p = sessionB?.player
+            if (p != null && p.mediaItemCount > 0) {
+                if (p.isPlaying) p.pause() else p.play()
+            } else if (sessionA?.player?.mediaItemCount ?: 0 == 0) stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_SLEEP) {
             val minutes = intent.getIntExtra(EXTRA_MINUTES, 0)
             handler.removeCallbacks(sleepRunnable)
@@ -212,7 +225,7 @@ class PlaybackService : MediaSessionService() {
             unregisterReceiver(screenReceiver)
         } catch (_: IllegalArgumentException) {
         }
-        prefs.edit().putBoolean("isPlaying", false).putBoolean("deck2Alive", false).apply()
+        prefs.edit().putBoolean("isPlaying", false).putBoolean("deck2Alive", false).putBoolean("isPlayingB", false).apply()
         HushWidget.refresh(this)
         sessionA?.run {
             player.release()

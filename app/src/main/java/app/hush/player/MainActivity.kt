@@ -925,6 +925,7 @@ class MainActivity : Activity() {
         }
         row.addView(bullet)
         row.addView(label)
+        (value.parent as? ViewGroup)?.removeView(value)
         row.addView(value)
         row.addView(chevron)
         return row
