@@ -13,12 +13,11 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.view.KeyEvent
 import android.widget.RemoteViews
 import androidx.core.graphics.ColorUtils
 
 /**
- * 2x1 home-screen widget, Braun style: two keys, A and B. Tap a key to play / pause that deck.
+ * 1x1 dark Braun-style widget. Swipe up / down for deck A or B; tap to play / pause it.
  * Never polls (updatePeriodMillis = 0); the service refreshes it only when playback changes.
  */
 class HushWidget : AppWidgetProvider() {
@@ -29,42 +28,29 @@ class HushWidget : AppWidgetProvider() {
 
     companion object {
         fun build(context: Context): RemoteViews {
-            val prefs = context.getSharedPreferences("hush", Context.MODE_PRIVATE)
             val rv = RemoteViews(context.packageName, R.layout.widget_play)
-            val accA = prefs.getInt("accentD1", prefs.getInt("accent", 0xFFD71921.toInt()))
-            val accB = prefs.getInt("accentD2", 0xFF00A859.toInt())
-            rv.setImageViewBitmap(R.id.wImg, draw(prefs.getBoolean("isPlaying", false), accA, "A"))
-            rv.setImageViewBitmap(R.id.wImgB, draw(prefs.getBoolean("isPlayingB", false), accB, "B"))
-
-            // A: media-button press (resumes your last song if nothing is loaded).
-            val a = Intent(Intent.ACTION_MEDIA_BUTTON)
-                .setComponent(ComponentName(context, PlaybackService::class.java))
-                .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-            rv.setOnClickPendingIntent(
-                R.id.wImg,
-                PendingIntent.getForegroundService(context, 0, a, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            )
-            // B: play / pause deck B from the home screen.
-            val b = Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_TOGGLE_B)
-            rv.setOnClickPendingIntent(
-                R.id.wImgB,
-                PendingIntent.getService(context, 1, b, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            rv.setRemoteAdapter(R.id.wStack, Intent(context, HushWidgetService::class.java))
+            // Tap = play / pause the deck on screen. Swipe up / down = switch deck.
+            val tpl = Intent(context, PlaybackService::class.java).setAction(PlaybackService.ACTION_TOGGLE)
+            rv.setPendingIntentTemplate(
+                R.id.wStack,
+                PendingIntent.getService(context, 0, tpl, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
             )
             return rv
         }
 
-        private fun draw(playing: Boolean, accent: Int, letter: String): Bitmap {
+        fun draw(playing: Boolean, accent: Int, letter: String): Bitmap {
             val s = 288
             val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
             val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
             // light warm-grey body
-            p.color = 0xFFE9E8E4.toInt()
+            p.color = 0xFF121212.toInt()
             c.drawRoundRect(RectF(4f, 4f, s - 4f, s - 4f), 72f, 72f, p)
 
             // deck letter
-            p.color = 0xFF3A3A3A.toInt()
+            p.color = 0xFF8C8C8C.toInt()
             p.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
             p.textSize = 34f
             c.drawText(letter, 36f, 64f, p)
@@ -73,9 +59,9 @@ class HushWidget : AppWidgetProvider() {
             val cx = s / 2f
             val cy = 124f
             val r = 62f
-            p.color = if (playing) accent else 0xFFC9C8C3.toInt()
+            p.color = if (playing) accent else 0xFF2E2E2E.toInt()
             c.drawCircle(cx, cy, r, p)
-            p.color = if (playing) (if (ColorUtils.calculateLuminance(accent) > 0.5) Color.BLACK else Color.WHITE) else 0xFF2B2B2B.toInt()
+            p.color = if (playing) (if (ColorUtils.calculateLuminance(accent) > 0.5) Color.BLACK else Color.WHITE) else 0xFFF2F2F2.toInt()
             if (playing) {
                 c.drawRoundRect(RectF(cx - 24f, cy - 28f, cx - 8f, cy + 28f), 4f, 4f, p)
                 c.drawRoundRect(RectF(cx + 8f, cy - 28f, cx + 24f, cy + 28f), 4f, 4f, p)
@@ -89,8 +75,14 @@ class HushWidget : AppWidgetProvider() {
                 c.drawPath(path, p)
             }
 
+            // page dots (swipe up / down for the other deck)
+            p.color = 0xFF8C8C8C.toInt()
+            c.drawCircle(s - 30f, 120f, if (letter == "A") 8f else 5f, p)
+            c.drawCircle(s - 30f, 150f, if (letter == "B") 8f else 5f, p)
+            p.color = 0xFF262626.toInt()
+
             // speaker grille
-            p.color = 0xFFB4B3AE.toInt()
+            p.color = 0xFF262626.toInt()
             for (row in 0 until 3) for (i in 0 until 7) {
                 c.drawCircle(60f + i * 28f, 214f + row * 22f, 5f, p)
             }
@@ -100,7 +92,10 @@ class HushWidget : AppWidgetProvider() {
         fun refresh(context: Context) {
             val mgr = AppWidgetManager.getInstance(context)
             val ids = mgr.getAppWidgetIds(ComponentName(context, HushWidget::class.java))
-            if (ids.isNotEmpty()) mgr.updateAppWidget(ids, build(context))
+            if (ids.isNotEmpty()) {
+                mgr.updateAppWidget(ids, build(context))
+                mgr.notifyAppWidgetViewDataChanged(ids, R.id.wStack)
+            }
         }
     }
 }

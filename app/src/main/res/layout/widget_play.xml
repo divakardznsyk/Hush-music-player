@@ -1,25 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/wRoot"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal">
+    android:layout_height="match_parent">
 
-    <ImageView
-        android:id="@+id/wImg"
-        android:layout_width="0dp"
+    <StackView
+        android:id="@+id/wStack"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:contentDescription="Deck A play or pause"
-        android:padding="4dp"
-        android:scaleType="fitCenter" />
-
-    <ImageView
-        android:id="@+id/wImgB"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:contentDescription="Deck B play or pause"
-        android:padding="4dp"
-        android:scaleType="fitCenter" />
-</LinearLayout>
+        android:loopViews="true" />
+</FrameLayout>
