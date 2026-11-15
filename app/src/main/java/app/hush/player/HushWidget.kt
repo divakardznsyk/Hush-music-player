@@ -42,7 +42,7 @@ class HushWidget : AppWidgetProvider() {
 
         fun build(context: Context): RemoteViews {
             val prefs = context.getSharedPreferences("hush", Context.MODE_PRIVATE)
-            val playing = prefs.getBoolean("isPlaying", false) || prefs.getBoolean("isPlayingB", false)
+            val playing = prefs.getBoolean("isPlaying", false) || prefs.getBoolean("isPlayingB", false) || prefs.getBoolean("isPlayingC", false)
             val id = prefs.getString("lastId", "") ?: ""
             val line = LINES[Math.floorMod(id.hashCode(), LINES.length)]
             val express = Math.floorMod(id.hashCode() / 31, 4) == 0 // about 1 song in 4 rides the express

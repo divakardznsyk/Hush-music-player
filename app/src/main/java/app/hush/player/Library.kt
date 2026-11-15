@@ -4,6 +4,8 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -23,8 +25,19 @@ object Library {
     fun coverFile(context: Context, id: String): File =
         File(File(context.filesDir, "covers"), "$id.jpg")
 
+    /** The folder you picked, as a path inside storage ("Music/MyTracks"); null until you pick one. */
+    fun folderRel(context: Context): String? {
+        val u = context.getSharedPreferences("hush", Context.MODE_PRIVATE).getString("folderUri", null) ?: return null
+        return try {
+            DocumentsContract.getTreeDocumentId(Uri.parse(u)).substringAfter(':', "").trim('/')
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun query(context: Context): List<MediaItem> {
+        val rel = folderRel(context) ?: return emptyList() // no folder chosen = no music from other apps
         val base = audioBase()
         val proj = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -36,9 +49,20 @@ object Library {
             MediaStore.Audio.Media.ALBUM_ID
         )
         // Everything audible except ringtones, notification sounds and alarms.
-        val sel = "${MediaStore.Audio.Media.IS_RINGTONE} = 0 AND " +
+        var sel = "${MediaStore.Audio.Media.IS_RINGTONE} = 0 AND " +
             "${MediaStore.Audio.Media.IS_NOTIFICATION} = 0 AND " +
             "${MediaStore.Audio.Media.IS_ALARM} = 0"
+        var args: Array<String>? = null
+        if (rel.isNotEmpty()) {
+            val esc = rel.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            if (Build.VERSION.SDK_INT >= 29) {
+                sel += " AND ${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? ESCAPE '\\'"
+                args = arrayOf("$esc/%")
+            } else {
+                sel += " AND ${MediaStore.Audio.Media.DATA} LIKE ? ESCAPE '\\'"
+                args = arrayOf("%/$esc/%")
+            }
+        }
         val order = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
         val albumArtBase = Uri.parse("content://media/external/audio/albumart")
 
@@ -47,7 +71,7 @@ object Library {
             .getString("order", "") ?: ""
 
         val out = ArrayList<MediaItem>()
-        context.contentResolver.query(base, proj, sel, null, order)?.use { c ->
+        context.contentResolver.query(base, proj, sel, args, order)?.use { c ->
             val iId = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val iTitle = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val iArtist = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -72,6 +96,7 @@ object Library {
 
                 val extras = Bundle().apply {
                     putString("fmt", format)
+                    putString("name", name)
                     putString("artist", artist ?: "")
                     putInt("kbps", kbps)
                     putBoolean("lossless", format in losslessFormats)

@@ -28,7 +28,8 @@ Updates install over the old version. Every push to `main` rebuilds the same dow
 |:--|:--|
 | **Original quality** | FLAC, WAV, AIFF, MP3, AAC and more, played exactly as stored. |
 | **Own volume** | Hush has its own volume, separate from the phone. Phone at 100%, Hush at 20%. |
-| **Two decks, A and B** | Play two things at once. Each deck has its own song, speed, volume and colour. Switch with the subway bullets. |
+| **Your folder only** | Pick one folder on first launch. Hush plays only that folder, and new songs you drop in show up on their own. |
+| **Three decks, A B C** | Each deck is its own section with its own queue, speed, volume and colour. Switch with the subway bullets. |
 | **Background play** | Screen off, app closed, still playing. Bluetooth and headset buttons work. |
 | **Your library, your way** | Hold a song to drag it into place, or edit its name, artist and cover. Your files are never touched. |
 | **Speed + sleep timer** | 0.5x to 2x, and a timer that pauses both decks. |

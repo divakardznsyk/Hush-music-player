@@ -68,6 +68,16 @@
                 android:gravity="center"
                 android:text="B"
                 android:textSize="18sp" />
+            <TextView
+                android:id="@+id/libBullet3"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:text="C"
+                android:textSize="18sp" />
 
             <ImageButton
                 android:id="@+id/searchBtn"
@@ -165,9 +175,10 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:fontFamily="sans-serif-medium"
+                android:fontFamily="sans-serif-black"
                 android:gravity="end"
-                android:text="Hold a song: drag to reorder"
+                android:maxLines="1"
+                android:text="PLAYS ON DECK A"
                 android:textColor="#4A4A4A"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -347,6 +358,15 @@
                 android:fontFamily="sans-serif-black"
                 android:gravity="center"
                 android:text="B"
+                android:textSize="18sp" />
+            <TextView
+                android:id="@+id/bullet3"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-black"
+                android:gravity="center"
+                android:text="C"
                 android:textSize="18sp" />
 
             <TextView

@@ -11,11 +11,14 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.database.ContentObserver
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Size
@@ -29,6 +32,7 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.media3.common.C
@@ -51,7 +55,7 @@ class MainActivity : Activity() {
     private val metaPrefs by lazy { getSharedPreferences("hush_meta", MODE_PRIVATE) }
     private val density by lazy { resources.displayMetrics.density }
 
-    /** One player. Deck 1 = internally A, Deck 2 = internally B (connected only when first used). */
+    /** One player. Deck 1/2/3 = A/B/C. B and C are connected only when first used. */
     private inner class Deck(val idx: Int, val defAccent: Int) {
         var ctrl: MediaController? = null
         var future: ListenableFuture<MediaController>? = null
@@ -108,8 +112,9 @@ class MainActivity : Activity() {
 
     private val d1 = Deck(1, 0xFFD71921.toInt())
     private val d2 = Deck(2, 0xFF00A859.toInt())
+    private val d3 = Deck(3, 0xFF2D7DFF.toInt())
     private var cur: Deck = d1
-    private fun decks() = listOf(d1, d2)
+    private fun decks() = listOf(d1, d2, d3)
 
     private var all: List<MediaItem> = emptyList()
     private var shown = ArrayList<MediaItem>()
@@ -122,7 +127,6 @@ class MainActivity : Activity() {
     private var playerOpen = false
     private var sheetOpen = false
     private var sheetPage = 0
-    private var pickDeck: Deck? = null
 
     // drag / edit state
     private var dragMoved = false
@@ -139,6 +143,7 @@ class MainActivity : Activity() {
     private lateinit var libCount: TextView
     private lateinit var libBullet1: TextView
     private lateinit var libBullet2: TextView
+    private lateinit var libBullet3: TextView
     private lateinit var searchBtn: ImageButton
     private lateinit var volBarLib: LineSlider
     private lateinit var volLabelLib: TextView
@@ -146,7 +151,6 @@ class MainActivity : Activity() {
     private lateinit var tabAll: TextView
     private lateinit var tabLiked: TextView
     private lateinit var reorderHint: TextView
-    private lateinit var pickBanner: TextView
     private lateinit var search: EditText
     private lateinit var list: RecyclerView
     private lateinit var empty: TextView
@@ -161,6 +165,7 @@ class MainActivity : Activity() {
     private lateinit var backBtn: ImageButton
     private lateinit var bullet1: TextView
     private lateinit var bullet2: TextView
+    private lateinit var bullet3: TextView
     private lateinit var infoText: TextView
     private lateinit var menuBtn: ImageButton
     private lateinit var disc: DiscView
@@ -244,7 +249,7 @@ class MainActivity : Activity() {
         bindViews()
         loadAccents()
         favs = (prefs.getStringSet("fav", emptySet()) ?: emptySet()).toMutableSet()
-        val deck2WasAlive = prefs.getBoolean("deck2Alive", false)
+        val aliveDecks = listOf(d2, d3).filter { prefs.getBoolean("alive${nm(it)}", false) }
 
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
@@ -280,14 +285,16 @@ class MainActivity : Activity() {
         // deck switch (subway bullets)
         bullet1.setOnClickListener { selectDeck(d1) }
         bullet2.setOnClickListener { selectDeck(d2) }
-        libBullet1.setOnClickListener { openDeck(d1) }
-        libBullet2.setOnClickListener { openDeck(d2) }
+        bullet3.setOnClickListener { selectDeck(d3) }
+        libBullet1.setOnClickListener { libTap(d1) }
+        libBullet2.setOnClickListener { libTap(d2) }
+        libBullet3.setOnClickListener { libTap(d3) }
+        empty.setOnClickListener { if (prefs.getString("folderUri", null) == null) pickFolder() }
 
         // navigation
-        mini.setOnClickListener { miniDeck()?.let { openDeck(it) } }
+        mini.setOnClickListener { miniDeck()?.let { selectDeck(it); openPlayer() } }
         backBtn.setOnClickListener { closePlayer() }
         menuBtn.setOnClickListener { openSheet(0) }
-        pickBanner.setOnClickListener { cancelPick() }
 
         // library controls
         tabAll.setOnClickListener { tab = 0; styleTabs(); applyFilter() }
@@ -324,7 +331,7 @@ class MainActivity : Activity() {
         applyTheme()
         selectDeck(d1)
         connect(d1)
-        if (deck2WasAlive) connect(d2)
+        aliveDecks.forEach { connect(it) }
         requestAccess()
         val crash = File(filesDir, "crash.txt")
         if (crash.exists()) {
@@ -338,6 +345,7 @@ class MainActivity : Activity() {
         libCount = v(R.id.libCount)
         libBullet1 = v(R.id.libBullet1)
         libBullet2 = v(R.id.libBullet2)
+        libBullet3 = v(R.id.libBullet3)
         searchBtn = v(R.id.searchBtn)
         volBarLib = v(R.id.volBarLib)
         volLabelLib = v(R.id.volLabelLib)
@@ -345,7 +353,6 @@ class MainActivity : Activity() {
         tabAll = v(R.id.tabAll)
         tabLiked = v(R.id.tabLiked)
         reorderHint = v(R.id.reorderHint)
-        pickBanner = v(R.id.pickBanner)
         search = v(R.id.search)
         list = v(R.id.list)
         empty = v(R.id.empty)
@@ -359,6 +366,7 @@ class MainActivity : Activity() {
         backBtn = v(R.id.backBtn)
         bullet1 = v(R.id.bullet1)
         bullet2 = v(R.id.bullet2)
+        bullet3 = v(R.id.bullet3)
         infoText = v(R.id.infoText)
         menuBtn = v(R.id.menuBtn)
         disc = v(R.id.disc)
@@ -406,14 +414,16 @@ class MainActivity : Activity() {
         super.onStart()
         started = true
         if (checkSelfPermission(audioPerm) == PackageManager.PERMISSION_GRANTED &&
-            System.currentTimeMillis() - lastLoad > 30_000
-        ) loadTracks()
+            System.currentTimeMillis() - lastLoad > 2_000
+        ) loadTracks { syncFolder() }
+        contentResolver.registerContentObserver(Library.audioBase(), true, observer)
         updateTicker()
     }
 
     override fun onStop() {
         started = false
         ui.removeCallbacks(ticker)
+        contentResolver.unregisterContentObserver(observer)
         super.onStop()
     }
 
@@ -435,7 +445,6 @@ class MainActivity : Activity() {
                 else -> showPage(0)
             }
             playerOpen -> closePlayer()
-            pickDeck != null -> cancelPick()
             search.visibility == View.VISIBLE -> toggleSearch()
             else -> super.onBackPressed()
         }
@@ -488,8 +497,10 @@ class MainActivity : Activity() {
     private fun styleBullets() {
         styleBullet(bullet1, d1, cur === d1)
         styleBullet(bullet2, d2, cur === d2)
-        styleBullet(libBullet1, d1, d1.playing)
-        styleBullet(libBullet2, d2, d2.playing)
+        styleBullet(bullet3, d3, cur === d3)
+        styleBullet(libBullet1, d1, cur === d1)
+        styleBullet(libBullet2, d2, cur === d2)
+        styleBullet(libBullet3, d3, cur === d3)
     }
 
     /** Repaints everything that uses a deck colour. */
@@ -500,10 +511,6 @@ class MainActivity : Activity() {
         playBtn.setColorFilter(c.onAccent)
         btnSave.background = rect(c.accent, 16f)
         btnSave.setTextColor(c.onAccent)
-        pickDeck?.let {
-            pickBanner.background = rect(it.accent, 16f)
-            pickBanner.setTextColor(it.onAccent)
-        }
         styleBullets()
         styleTabs()
         syncModes()
@@ -559,14 +566,14 @@ class MainActivity : Activity() {
 
     private fun artistOf(item: MediaItem?): String =
         item?.mediaMetadata?.extras?.getString("artist")
-            ?: item?.mediaMetadata?.artist?.toString()?.removePrefix("DECK B · ")
+            ?: item?.mediaMetadata?.artist?.toString()?.replace(Regex("^DECK [ABC] · "), "")
             ?: ""
 
     // ------------------------------------------------------------------------------------------
     // volume: APP VOL (master) x deck volume
     // ------------------------------------------------------------------------------------------
 
-    private fun nm(d: Deck) = if (d.idx == 1) "A" else "B"
+    private fun nm(d: Deck) = "ABC"[d.idx - 1].toString()
     private fun gain(d: Deck) = prefs.getFloat(
         "gain${d.idx}", if (d.idx == 1) prefs.getFloat("master", prefs.getFloat("volume", 1f)) else 1f
     )
@@ -597,7 +604,7 @@ class MainActivity : Activity() {
 
     private fun requestAccess() {
         if (checkSelfPermission(audioPerm) == PackageManager.PERMISSION_GRANTED) {
-            loadTracks()
+            begin()
             return
         }
         val perms = mutableListOf(audioPerm)
@@ -608,9 +615,86 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(code, perms, results)
         if (checkSelfPermission(audioPerm) == PackageManager.PERMISSION_GRANTED) {
-            loadTracks()
+            begin()
         } else {
             empty.text = "Allow music access in Settings to see your songs"
+        }
+    }
+
+    /** First launch asks which folder to use; after that it just loads and scans it. */
+    private fun begin() {
+        if (prefs.getString("folderUri", null) == null) {
+            applyFilter()
+            pickFolder()
+        } else loadTracks { syncFolder() }
+    }
+
+    private fun pickFolder() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        startActivityForResult(i, 78)
+    }
+
+    private fun folderName(): String {
+        val u = prefs.getString("folderUri", null) ?: return ""
+        return try {
+            DocumentsContract.getTreeDocumentId(Uri.parse(u)).substringAfter(':').substringAfterLast('/').ifEmpty { "Storage" }
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /** Songs you drop into the folder after the phone last scanned it get scanned now. */
+    private fun syncFolder() {
+        val uriStr = prefs.getString("folderUri", null) ?: return
+        val known = all.mapNotNull { it.mediaMetadata.extras?.getString("name") }.toHashSet()
+        val exts = setOf("mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "aiff", "aif", "alac", "ape")
+        io.execute {
+            val missing = ArrayList<String>()
+            try {
+                val tree = Uri.parse(uriStr)
+                val queue = ArrayDeque<String>()
+                queue.add(DocumentsContract.getTreeDocumentId(tree))
+                var seen = 0
+                while (queue.isNotEmpty() && seen < 4000) {
+                    val doc = queue.removeFirst()
+                    val kids = DocumentsContract.buildChildDocumentsUriUsingTree(tree, doc)
+                    contentResolver.query(
+                        kids,
+                        arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE
+                        ), null, null, null
+                    )?.use { c ->
+                        while (c.moveToNext()) {
+                            seen++
+                            val id = c.getString(0)
+                            val name = c.getString(1) ?: continue
+                            val mime = c.getString(2) ?: ""
+                            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) queue.add(id)
+                            else if ((mime.startsWith("audio/") || name.substringAfterLast('.').lowercase() in exts) && name !in known) {
+                                val vol = id.substringBefore(':')
+                                val rel = id.substringAfter(':')
+                                missing.add(if (vol == "primary") "/storage/emulated/0/$rel" else "/storage/$vol/$rel")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+            }
+            // the phone's scanner adds them; the content observer then refreshes the list
+            if (missing.isNotEmpty()) MediaScannerConnection.scanFile(this, missing.toTypedArray(), null, null)
+        }
+    }
+
+    private val reload = Runnable {
+        if (checkSelfPermission(audioPerm) == PackageManager.PERMISSION_GRANTED) loadTracks()
+    }
+    private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            ui.removeCallbacks(reload)
+            ui.postDelayed(reload, 800)
         }
     }
 
@@ -620,7 +704,7 @@ class MainActivity : Activity() {
             val found = try { Library.query(this) } catch (e: Exception) { emptyList() }
             runOnUiThread {
                 all = found
-                libCount.text = "${all.size} songs"
+                libCount.text = "${all.size} songs" + folderName().let { if (it.isEmpty()) "" else "\n$it" }
                 applyFilter()
                 after?.invoke()
             }
@@ -637,12 +721,20 @@ class MainActivity : Activity() {
         })
         adapter.notifyDataSetChanged()
         empty.text = when {
-            all.isEmpty() -> if (lastLoad > 0) "No music found on this phone" else "Looking for music…"
+            prefs.getString("folderUri", null) == null -> "Choose your music folder\n(tap here)"
+            all.isEmpty() -> if (lastLoad > 0) "No music found in this folder" else "Looking for music…"
             tab == 1 && q.isEmpty() -> "No liked songs yet.\nTap the heart while playing."
             else -> "Nothing found"
         }
         empty.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
-        reorderHint.visibility = if (reorderAllowed && shown.isNotEmpty()) View.VISIBLE else View.GONE
+        updateHint()
+    }
+
+    /** Tells you which deck a tap will play on. */
+    private fun updateHint() {
+        reorderHint.text = "PLAYS ON DECK ${nm(cur)}"
+        reorderHint.setTextColor(cur.accent)
+        reorderHint.visibility = if (shown.isNotEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun toggleSearch() {
@@ -675,7 +767,7 @@ class MainActivity : Activity() {
         if (d.future != null) return
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val builder = MediaController.Builder(this, token)
-        if (d.idx == 2) builder.setConnectionHints(Bundle().apply { putString("deck", "B") })
+        if (d.idx > 1) builder.setConnectionHints(Bundle().apply { putString("deck", nm(d)) })
         val future = builder.buildAsync()
         d.future = future
         future.addListener({
@@ -704,83 +796,66 @@ class MainActivity : Activity() {
     private fun toggleDeck(d: Deck) {
         val c = d.ctrl
         when {
-            c == null || c.mediaItemCount == 0 -> {
-                if (d === d1 && c != null && shown.isNotEmpty()) playFrom(0) else startPick(d)
-            }
+            c == null || c.mediaItemCount == 0 -> { selectDeck(d); closePlayer() } // empty: go add songs
             c.isPlaying -> c.pause()
             else -> c.play()
         }
     }
 
-    private fun playFrom(index: Int) {
-        val c = d1.ctrl ?: return
-        if (shown.isEmpty() || index !in shown.indices) return
-        c.setMediaItems(shown, index, 0L)
-        c.prepare()
-        c.play()
-        openDeck(d1)
-    }
+    private fun tag(d: Deck, item: MediaItem): MediaItem =
+        if (d.idx == 1) item else item.buildUpon().setMediaMetadata(
+            item.mediaMetadata.buildUpon().setArtist("DECK ${nm(d)} · " + artistOf(item)).build()
+        ).build()
 
-    private fun loadDeck2(item: MediaItem) {
-        val tagged = item.buildUpon()
-            .setMediaMetadata(
-                item.mediaMetadata.buildUpon().setArtist("DECK B · " + artistOf(item)).build()
-            )
-            .build()
-        connect(d2) { c ->
-            c.repeatMode = Player.REPEAT_MODE_ONE // loops until you pause or change it
-            c.setMediaItem(tagged)
+    /** Tap a song: it plays on the selected deck, with the list after it as that deck's queue. */
+    private fun playFrom(index: Int) {
+        if (shown.isEmpty() || index !in shown.indices) return
+        val d = cur
+        val items = shown.map { tag(d, it) }
+        connect(d) { c ->
+            c.setMediaItems(items, index, 0L)
             c.prepare()
             c.play()
         }
-        openDeck(d2)
+        openPlayer()
     }
 
-    private fun playOn(d: Deck, pos: Int) {
-        if (pos !in shown.indices) return
-        if (d === d1) playFrom(pos) else loadDeck2(shown[pos])
+    private fun playOnly(d: Deck, item: MediaItem) {
+        selectDeck(d)
+        connect(d) { c ->
+            c.setMediaItem(tag(d, item))
+            c.prepare()
+            c.play()
+        }
+        openPlayer()
     }
 
-    private fun startPick(d: Deck) {
-        pickDeck = d
-        pickBanner.text = "PICK A SONG FOR DECK ${nm(d)}   ✕"
-        pickBanner.background = rect(d.accent, 16f)
-        pickBanner.setTextColor(d.onAccent)
-        pickBanner.visibility = View.VISIBLE
-        if (sheetOpen) closeSheet()
-        if (playerOpen) closePlayer()
-    }
-
-    private fun cancelPick() {
-        pickDeck = null
-        pickBanner.visibility = View.GONE
+    private fun addTo(d: Deck, item: MediaItem) {
+        connect(d) { c ->
+            val wasEmpty = c.mediaItemCount == 0
+            c.addMediaItem(tag(d, item))
+            if (wasEmpty) {
+                c.prepare()
+                c.play()
+            }
+        }
+        Toast.makeText(this, "Added to deck ${nm(d)}", Toast.LENGTH_SHORT).show()
     }
 
     private fun onRowClick(pos: Int) {
-        if (pos !in shown.indices) return
-        val d = pickDeck
-        if (d != null) {
-            cancelPick()
-            playOn(d, pos)
-        } else playFrom(pos)
+        playFrom(pos)
     }
 
-    /** Bullet tap in the library: open that deck, or ask for a song if it is empty. */
-    private fun openDeck(d: Deck) {
-        if (d.hasItem || d === d1 && d.ctrl != null && d.currentId != null) {
-            selectDeck(d)
-            openPlayer()
-        } else if (d === d2 && d.ctrl == null && prefs.getBoolean("deck2Alive", false)) {
-            connect(d2) { selectDeck(d2); openPlayer() }
-        } else {
-            selectDeck(d)
-            startPick(d)
-        }
+    /** Library bullet: pick which deck taps play on; tap the selected one again to open it. */
+    private fun libTap(d: Deck) {
+        if (d === cur && d.hasItem) openPlayer() else selectDeck(d)
     }
 
     private fun selectDeck(d: Deck) {
         cur = d
+        if (d.ctrl == null && prefs.getBoolean("alive${nm(d)}", false)) connect(d)
         applyTheme()
+        updateHint()
         syncTrack()
         syncPlay()
         showGain()
@@ -789,12 +864,9 @@ class MainActivity : Activity() {
         updateTicker()
     }
 
-    private fun miniDeck(): Deck? = when {
-        d2.playing && !d1.playing -> d2
-        d1.hasItem -> d1
-        d2.hasItem -> d2
-        else -> null
-    }
+    private fun miniDeck(): Deck? =
+        if (cur.playing) cur
+        else decks().firstOrNull { it.playing } ?: if (cur.hasItem) cur else decks().firstOrNull { it.hasItem }
 
     private fun applySpeed(speed: Float) {
         val c = cur.ctrl ?: return
@@ -953,6 +1025,10 @@ class MainActivity : Activity() {
         pageMenu.addView(menuRow("1", "Speed", menuSpeedVal) { showPage(1) })
         pageMenu.addView(menuRow("2", "Sleep timer", menuSleepVal) { showPage(2) })
         pageMenu.addView(menuRow("3", "Deck colours", dots) { showPage(3) })
+        pageMenu.addView(menuRow("4", "Music folder", valueText().apply { text = folderName() }) {
+            closeSheet()
+            pickFolder()
+        })
         pageMenu.addView(menuRow("E", "Edit song", valueText()) {
             val it = cur.ctrl?.currentMediaItem
             if (it == null) closeSheet() else openEdit(all.firstOrNull { a -> a.mediaId == it.mediaId } ?: it)
@@ -1018,15 +1094,37 @@ class MainActivity : Activity() {
         trackTitle.text = titleOf(item)
         trackArtist.text = artistOf(item)
         trackRows.removeAllViews()
-        val pos = { shown.indexOfFirst { it.mediaId == item.mediaId } }
-        trackRows.addView(menuRow("A", "Play on deck A", View(this)) {
-            closeSheet(); playOn(d1, pos())
-        })
-        trackRows.addView(menuRow("B", "Play on deck B", View(this)) {
-            closeSheet(); playOn(d2, pos())
-        })
-        trackRows.addView(menuRow("3", "Edit info", View(this)) { openEdit(item) })
+        trackRows.addView(deckRow("Play on") { d -> closeSheet(); playOnly(d, item) })
+        trackRows.addView(deckRow("Add to queue") { d -> closeSheet(); addTo(d, item) })
+        trackRows.addView(menuRow("E", "Edit info", valueText()) { openEdit(item) })
         openSheet(4)
+    }
+
+    /** A label with one subway bullet per deck. */
+    private fun deckRow(label: String, onPick: (Deck) -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        row.addView(TextView(this).apply {
+            text = label
+            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+            textSize = 20f
+            setTextColor(white)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        for (d in decks()) row.addView(TextView(this).apply {
+            text = nm(d)
+            gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+            textSize = 17f
+            setTextColor(d.onAccent)
+            background = oval(d.accent)
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { marginStart = dp(10) }
+            setOnClickListener { onPick(d) }
+        })
+        return row
     }
 
     private fun openEdit(item: MediaItem) {
@@ -1049,6 +1147,18 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 78) {
+            val tree = data?.data
+            if (resultCode == RESULT_OK && tree != null) {
+                try {
+                    contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: Exception) {
+                }
+                prefs.edit().putString("folderUri", tree.toString()).apply()
+                loadTracks { syncFolder() }
+            } else applyFilter()
+            return
+        }
         val uri = data?.data
         val id = editId
         if (requestCode != 77 || resultCode != RESULT_OK || uri == null || id == null) return
@@ -1117,9 +1227,7 @@ class MainActivity : Activity() {
         val fresh = all.firstOrNull { it.mediaId == id } ?: return
         for (d in decks()) {
             val c = d.ctrl ?: continue
-            val item = if (d === d2) fresh.buildUpon().setMediaMetadata(
-                fresh.mediaMetadata.buildUpon().setArtist("DECK B · " + artistOf(fresh)).build()
-            ).build() else fresh
+            val item = tag(d, fresh)
             for (i in 0 until c.mediaItemCount) {
                 if (c.getMediaItemAt(i).mediaId != id) continue
                 if (i == c.currentMediaItemIndex) {
@@ -1157,8 +1265,8 @@ class MainActivity : Activity() {
         val c = cur.ctrl
         val item = c?.currentMediaItem
         if (item == null) {
-            nowTitle.text = if (cur === d2) "Empty deck" else "Nothing playing"
-            nowSub.text = if (cur === d2) "Tap play to pick a song" else ""
+            nowTitle.text = "Deck ${nm(cur)} is empty"
+            nowSub.text = "Tap play to add songs"
             fmtLine.text = ""
         } else {
             nowTitle.text = titleOf(item)
@@ -1190,7 +1298,7 @@ class MainActivity : Activity() {
         val item = d.ctrl?.currentMediaItem
         mini.visibility = View.VISIBLE
         miniTitle.text = titleOf(item)
-        miniSub.text = (if (d === d2) "DECK B · " else "") + artistOf(item)
+        miniSub.text = "DECK ${nm(d)} · " + artistOf(item)
         miniPlay.background = oval(d.accent)
         miniPlay.setColorFilter(d.onAccent)
         miniPlay.setImageResource(if (d.playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -1317,7 +1425,7 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------------------------------
 
     private fun updateTicker() {
-        val playing = d1.playing || d2.playing || sleepRemainingMs() > 0
+        val playing = decks().any { it.playing } || sleepRemainingMs() > 0
         val visible = playerOpen || sheetOpen
         ui.removeCallbacks(ticker)
         if (started && visible && playing) ui.post(ticker)
@@ -1425,11 +1533,7 @@ class MainActivity : Activity() {
         override fun onBindViewHolder(h: VH, position: Int) {
             val item = shown[position]
             val md = item.mediaMetadata
-            val onDeck = when (item.mediaId) {
-                d1.currentId -> d1
-                d2.currentId -> d2
-                else -> null
-            }
+            val onDeck = decks().firstOrNull { it.currentId == item.mediaId }
             val lossless = md.extras?.getBoolean("lossless") ?: false
             h.itemView.setBackgroundColor(Color.TRANSPARENT)
             h.idx.text = String.format(Locale.US, "%02d", position + 1)

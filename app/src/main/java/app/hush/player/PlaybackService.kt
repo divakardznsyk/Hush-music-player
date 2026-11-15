@@ -25,7 +25,7 @@ import java.util.concurrent.Executors
 /**
  * Owns the players so music keeps going with the screen off / app closed.
  *
- * - Deck 1 (internally A) is the main player. Deck 2 (internally B) is a second, independent player that is created only when
+ * - Deck 1 (internally A) is the main player. Decks B and C are extra independent players that is created only when
  *   you first use it (looping, with its own volume).
  * - player.volume is a gain applied to THIS app's audio only (independent of phone volume).
  * - Volume / speed are saved so they survive restarts.
@@ -38,10 +38,11 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_SLEEP = "app.hush.player.SLEEP"
         const val EXTRA_MINUTES = "minutes"
         const val ID_B = "deckB"
+        const val ID_C = "deckC"
     }
 
     private var sessionA: MediaSession? = null
-    private var sessionB: MediaSession? = null
+    private val extra = HashMap<String, MediaSession>() // decks B and C, created on first use
     private var exoA: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
@@ -49,7 +50,7 @@ class PlaybackService : MediaSessionService() {
 
     private val sleepRunnable = Runnable {
         sessionA?.player?.pause()
-        sessionB?.player?.pause()
+        extra.values.forEach { it.player.pause() }
         prefs.edit().putLong("sleepEnd", 0L).apply()
     }
 
@@ -93,7 +94,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).putBoolean("deck2Alive", false).putBoolean("isPlayingB", false).apply()
+        prefs.edit().putLong("sleepEnd", 0L).putBoolean("isPlaying", false).putBoolean("aliveB", false).putBoolean("aliveC", false)
+            .putBoolean("isPlayingB", false).putBoolean("isPlayingC", false).apply()
         HushWidget.refresh(this)
 
         val player = ExoPlayer.Builder(this)
@@ -150,7 +152,7 @@ class PlaybackService : MediaSessionService() {
 
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
-                .setNotificationIdProvider { s -> if (s.id == ID_B) 1002 else 1001 }
+                .setNotificationIdProvider { s -> when (s.id) { ID_B -> 1002; ID_C -> 1003; else -> 1001 } }
                 .build()
                 .apply { setSmallIcon(R.drawable.ic_notif) }
         )
@@ -171,32 +173,30 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
-    /** Deck 2: created the first time the app connects to it. Loops, own volume, own notification. */
-    private fun ensureDeckB(): MediaSession {
-        sessionB?.let { return it }
+    /** Decks B and C: created the first time the app connects to them. Own queue, volume and notification. */
+    private fun ensureDeck(key: String): MediaSession {
+        extra[key]?.let { return it }
         val p = ExoPlayer.Builder(this)
             .setAudioAttributes(audioAttrs, false)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
-        p.repeatMode = Player.REPEAT_MODE_ONE
-        p.volume = prefs.getFloat("volumeB", 1f)
+        p.repeatMode = Player.REPEAT_MODE_ALL
         p.addListener(object : Player.Listener {
-            override fun onVolumeChanged(volume: Float) {
-                prefs.edit().putFloat("volumeB", volume).apply()
-            }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                prefs.edit().putBoolean("isPlayingB", isPlaying).apply()
+                prefs.edit().putBoolean("isPlaying$key", isPlaying).apply()
                 HushWidget.refresh(this@PlaybackService)
             }
         })
-        prefs.edit().putBoolean("deck2Alive", true).apply()
-        return MediaSession.Builder(this, p).setId(ID_B).build().also { sessionB = it }
+        prefs.edit().putBoolean("alive$key", true).apply()
+        return MediaSession.Builder(this, p).setId("deck$key").build().also { extra[key] = it }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
-        if (controllerInfo.connectionHints.getString("deck") == "B") ensureDeckB() else sessionA
+        when (val k = controllerInfo.connectionHints.getString("deck")) {
+            "B", "C" -> ensureDeck(k)
+            else -> sessionA
+        }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_SLEEP) {
@@ -210,7 +210,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Swiping the app away keeps music playing; if nothing is playing, shut down.
-        val busy = listOfNotNull(sessionA?.player, sessionB?.player)
+        val busy = (listOfNotNull(sessionA?.player) + extra.values.map { it.player })
             .any { it.playWhenReady && it.mediaItemCount > 0 }
         if (!busy) stopSelf()
     }
@@ -221,18 +221,19 @@ class PlaybackService : MediaSessionService() {
             unregisterReceiver(screenReceiver)
         } catch (_: IllegalArgumentException) {
         }
-        prefs.edit().putBoolean("isPlaying", false).putBoolean("deck2Alive", false).putBoolean("isPlayingB", false).apply()
+        prefs.edit().putBoolean("isPlaying", false).putBoolean("aliveB", false).putBoolean("aliveC", false)
+            .putBoolean("isPlayingB", false).putBoolean("isPlayingC", false).apply()
         HushWidget.refresh(this)
         sessionA?.run {
             player.release()
             release()
         }
-        sessionB?.run {
-            player.release()
-            release()
+        extra.values.forEach {
+            it.player.release()
+            it.release()
         }
+        extra.clear()
         sessionA = null
-        sessionB = null
         exoA = null
         io.shutdown()
         super.onDestroy()
