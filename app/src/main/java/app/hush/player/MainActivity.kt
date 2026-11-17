@@ -197,6 +197,19 @@ class MainActivity : Activity() {
     private lateinit var pageTrack: View
     private lateinit var pageEdit: View
     private lateinit var pageQueue: View
+    private lateinit var qBack: TextView
+    private lateinit var qClear: TextView
+    private lateinit var qSave: TextView
+    private lateinit var qLoad: TextView
+    private lateinit var qList: RecyclerView
+    private lateinit var qEmpty: TextView
+    private class QRow(val title: String, val sub: String, val id: String)
+    private var qRows = ArrayList<QRow>()
+    private var qMode = 0 // 0 = this deck's queue, 1 = saved playlists
+    private var qBusy = false
+    private val qAdapter = QueueAdapter()
+    private val plPrefs by lazy { getSharedPreferences("hush_pl", MODE_PRIVATE) }
+    private lateinit var pageQueue: View
     private lateinit var queueList: RecyclerView
     private lateinit var queueBack: TextView
     private lateinit var speedBig: TextView
@@ -341,6 +354,15 @@ class MainActivity : Activity() {
         btnSave.setOnClickListener { saveEdit() }
         buildSheetChips()
         buildAccentRows()
+        qList.layoutManager = LinearLayoutManager(this)
+        qList.adapter = qAdapter
+        qList.itemAnimator = null
+        qTouch.attachToRecyclerView(qList)
+        qBack.setOnClickListener { if (qMode == 1) { qMode = 0; refreshQueue() } else showPage(0) }
+        qLoad.setOnClickListener { qMode = 1; refreshQueue() }
+        qClear.setOnClickListener { cur.ctrl?.clearMediaItems(); refreshQueue() }
+        qSave.setOnClickListener { savePlaylist() }
+        nextStop.setOnClickListener { qMode = 0; openSheet(6) }
 
         applyTheme()
         selectDeck(d1)
@@ -410,6 +432,13 @@ class MainActivity : Activity() {
         pageTrack = v(R.id.pageTrack)
         pageEdit = v(R.id.pageEdit)
         pageQueue = v(R.id.pageQueue)
+        qBack = v(R.id.qBack)
+        qClear = v(R.id.qClear)
+        qSave = v(R.id.qSave)
+        qLoad = v(R.id.qLoad)
+        qList = v(R.id.qList)
+        qEmpty = v(R.id.qEmpty)
+        pageQueue = v(R.id.pageQueue)
         queueList = v(R.id.queueList)
         queueBack = v(R.id.queueBack)
         speedBig = v(R.id.speedBig)
@@ -459,6 +488,7 @@ class MainActivity : Activity() {
             sheetOpen -> when (sheetPage) {
                 0, 4 -> closeSheet()
                 5 -> showPage(4)
+                6 -> if (qMode == 1) { qMode = 0; refreshQueue() } else showPage(0)
                 else -> showPage(0)
             }
             playerOpen -> closePlayer()
@@ -977,6 +1007,8 @@ class MainActivity : Activity() {
         pageTrack.visibility = if (page == 4) View.VISIBLE else View.GONE
         pageEdit.visibility = if (page == 5) View.VISIBLE else View.GONE
         pageQueue.visibility = if (page == 6) View.VISIBLE else View.GONE
+        if (page == 6) refreshQueue()
+        pageQueue.visibility = if (page == 6) View.VISIBLE else View.GONE
         updateSpeedUi()
         updateSleepUi()
     }
@@ -1044,6 +1076,10 @@ class MainActivity : Activity() {
         pageMenu.addView(menuRow("1", "Speed", menuSpeedVal) { showPage(1) })
         pageMenu.addView(menuRow("2", "Sleep timer", menuSleepVal) { showPage(2) })
         pageMenu.addView(menuRow("3", "Deck colours", dots) { showPage(3) })
+        pageMenu.addView(menuRow("Q", "Queue", valueText().apply { text = (cur.ctrl?.mediaItemCount ?: 0).toString() }) {
+            qMode = 0
+            showPage(6)
+        })
         pageMenu.addView(menuRow("4", "Music folder", valueText().apply { text = folderName() }) {
             closeSheet()
             pickFolder()
@@ -1359,6 +1395,120 @@ class MainActivity : Activity() {
     }
 
     // ------------------------------------------------------------------------------------------
+    // queue + playlists (per deck)
+    // ------------------------------------------------------------------------------------------
+
+    private fun refreshQueue() {
+        val rows = ArrayList<QRow>()
+        if (qMode == 0) {
+            val c = cur.ctrl
+            if (c != null) for (i in 0 until c.mediaItemCount) {
+                val m = c.getMediaItemAt(i)
+                rows.add(QRow(titleOf(m), artistOf(m), m.mediaId))
+            }
+        } else {
+            plPrefs.all.entries.sortedBy { it.key }.forEach { e ->
+                val v = e.value as? String ?: return@forEach
+                rows.add(QRow(v.substringBefore('|'), v.substringAfter('|').split(',').size.toString() + " songs", e.key))
+            }
+        }
+        qRows = rows
+        qAdapter.notifyDataSetChanged()
+        qBack.text = if (qMode == 0) "‹  QUEUE · DECK ${nm(cur)}" else "‹  PLAYLISTS"
+        qEmpty.text = if (qMode == 0) "Queue is empty.\nAdd songs from the library." else "No playlists yet.\nSave a queue first."
+        qEmpty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        val q = if (qMode == 0) View.VISIBLE else View.GONE
+        qClear.visibility = q
+        qSave.visibility = q
+        qLoad.visibility = q
+    }
+
+    private fun savePlaylist() {
+        if (qRows.isEmpty()) return
+        val name = "Playlist ${plPrefs.all.size + 1}"
+        plPrefs.edit().putString(System.currentTimeMillis().toString(), name + "|" + qRows.joinToString(",") { it.id }).apply()
+        Toast.makeText(this, "Saved as $name", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun loadPlaylist(key: String) {
+        val ids = (plPrefs.getString(key, null) ?: return).substringAfter('|').split(',')
+        val byId = all.associateBy { it.mediaId }
+        val d = cur
+        val items = ids.mapNotNull { byId[it] }.map { tag(d, it) }
+        if (items.isEmpty()) return
+        connect(d) { c ->
+            c.setMediaItems(items, 0, 0L)
+            c.prepare()
+            c.play()
+        }
+        qMode = 0
+        refreshQueue()
+    }
+
+    private val qTouch = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+        ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+    ) {
+        override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+            val from = vh.bindingAdapterPosition
+            val to = target.bindingAdapterPosition
+            val c = cur.ctrl
+            if (qMode != 0 || c == null || from < 0 || to < 0) return false
+            c.moveMediaItem(from, to)
+            val r = qRows.removeAt(from)
+            qRows.add(to, r)
+            qAdapter.notifyItemMoved(from, to)
+            qBusy = true
+            return true
+        }
+
+        override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+
+        override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+            super.clearView(rv, vh)
+            qBusy = false
+            refreshQueue()
+        }
+    })
+
+    private inner class QueueAdapter : RecyclerView.Adapter<QueueAdapter.VH>() {
+        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
+            val idx: TextView = view.findViewById(R.id.rowIdx)
+            val title: TextView = view.findViewById(R.id.rowTitle)
+            val sub: TextView = view.findViewById(R.id.rowSub)
+            val del: TextView = view.findViewById(R.id.rowDel)
+        }
+
+        override fun getItemCount() = qRows.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            VH(layoutInflater.inflate(R.layout.row_queue, parent, false))
+
+        override fun onBindViewHolder(h: VH, position: Int) {
+            val r = qRows[position]
+            val now = qMode == 0 && position == cur.ctrl?.currentMediaItemIndex
+            h.idx.text = String.format(Locale.US, "%02d", position + 1)
+            h.idx.background = if (now) oval(cur.accent) else oval(Color.TRANSPARENT, 0xFF4A4A4A.toInt(), 1.5f)
+            h.idx.setTextColor(if (now) cur.onAccent else gray)
+            h.title.text = r.title
+            h.title.setTextColor(if (now) cur.accent else white)
+            h.sub.text = r.sub
+            h.itemView.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p == RecyclerView.NO_POSITION) return@setOnClickListener
+                if (qMode == 0) {
+                    cur.ctrl?.let { it.seekTo(p, 0L); it.play() }
+                } else loadPlaylist(qRows[p].id)
+            }
+            h.del.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p == RecyclerView.NO_POSITION) return@setOnClickListener
+                if (qMode == 0) cur.ctrl?.removeMediaItem(p) else plPrefs.edit().remove(qRows[p].id).apply()
+                refreshQueue()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
     // UI sync
     // ------------------------------------------------------------------------------------------
 
@@ -1375,6 +1525,7 @@ class MainActivity : Activity() {
         }
         updateFormat(d)
         if (d === cur) syncTrack()
+        if (sheetOpen && sheetPage == 6 && d === cur && !qBusy && qMode == 0) refreshQueue()
         syncMini()
         updateProgress()
     }
