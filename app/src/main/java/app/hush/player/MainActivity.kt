@@ -137,6 +137,7 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private val adapter = TrackAdapter()
+    private val qAdapter = QueueAdapter()
     private val reorderAllowed get() = tab == 0 && query.isBlank()
 
     // library
@@ -195,6 +196,9 @@ class MainActivity : Activity() {
     private lateinit var pageAccent: View
     private lateinit var pageTrack: View
     private lateinit var pageEdit: View
+    private lateinit var pageQueue: View
+    private lateinit var queueList: RecyclerView
+    private lateinit var queueBack: TextView
     private lateinit var speedBig: TextView
     private lateinit var speedBar: LineSlider
     private lateinit var presets: LinearLayout
@@ -255,6 +259,16 @@ class MainActivity : Activity() {
         list.adapter = adapter
         list.itemAnimator = null
         touch.attachToRecyclerView(list)
+        queueList.layoutManager = LinearLayoutManager(this)
+        queueList.adapter = qAdapter
+        queueList.itemAnimator = null
+        qTouch.attachToRecyclerView(queueList)
+        nextStop.setOnClickListener { openQueue() }
+        queueBack.setOnClickListener { showPage(0) }
+        v<View>(R.id.btnClear).setOnClickListener {
+            cur.ctrl?.let { it.stop(); it.clearMediaItems() }
+            closeSheet()
+        }
 
         // volumes: APP VOL (master, library) x deck volume (player). Ticks every 5%.
         volBarLib.hapticSteps = 20
@@ -395,6 +409,9 @@ class MainActivity : Activity() {
         pageAccent = v(R.id.pageAccent)
         pageTrack = v(R.id.pageTrack)
         pageEdit = v(R.id.pageEdit)
+        pageQueue = v(R.id.pageQueue)
+        queueList = v(R.id.queueList)
+        queueBack = v(R.id.queueBack)
         speedBig = v(R.id.speedBig)
         speedBar = v(R.id.speedBar)
         presets = v(R.id.presets)
@@ -959,6 +976,7 @@ class MainActivity : Activity() {
         pageAccent.visibility = if (page == 3) View.VISIBLE else View.GONE
         pageTrack.visibility = if (page == 4) View.VISIBLE else View.GONE
         pageEdit.visibility = if (page == 5) View.VISIBLE else View.GONE
+        pageQueue.visibility = if (page == 6) View.VISIBLE else View.GONE
         updateSpeedUi()
         updateSleepUi()
     }
@@ -1022,6 +1040,7 @@ class MainActivity : Activity() {
                 })
             }
         }
+        pageMenu.addView(menuRow("Q", "Queue", valueText().apply { text = "${cur.ctrl?.mediaItemCount ?: 0}" }) { openQueue() })
         pageMenu.addView(menuRow("1", "Speed", menuSpeedVal) { showPage(1) })
         pageMenu.addView(menuRow("2", "Sleep timer", menuSleepVal) { showPage(2) })
         pageMenu.addView(menuRow("3", "Deck colours", dots) { showPage(3) })
@@ -1098,6 +1117,104 @@ class MainActivity : Activity() {
         trackRows.addView(deckRow("Add to queue") { d -> closeSheet(); addTo(d, item) })
         trackRows.addView(menuRow("E", "Edit info", valueText()) { openEdit(item) })
         openSheet(4)
+    }
+
+    /** The selected deck's queue: tap to jump, drag to reorder, ✕ to remove. */
+    private fun openQueue() {
+        val c = cur.ctrl
+        if (c == null || c.mediaItemCount == 0) {
+            Toast.makeText(this, "Deck ${nm(cur)} queue is empty", Toast.LENGTH_SHORT).show()
+            return
+        }
+        queueBack.text = "‹  QUEUE · DECK ${nm(cur)}"
+        qAdapter.notifyDataSetChanged()
+        openSheet(6)
+        queueList.scrollToPosition(c.currentMediaItemIndex)
+    }
+
+    private val qTouch = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+        ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+    ) {
+        override fun isLongPressDragEnabled() = false
+
+        override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, t: RecyclerView.ViewHolder): Boolean {
+            val from = vh.bindingAdapterPosition
+            val to = t.bindingAdapterPosition
+            if (from < 0 || to < 0) return false
+            cur.ctrl?.moveMediaItem(from, to)
+            qAdapter.notifyItemMoved(from, to)
+            return true
+        }
+
+        override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+
+        override fun onSelectedChanged(vh: RecyclerView.ViewHolder?, state: Int) {
+            super.onSelectedChanged(vh, state)
+            if (state == ItemTouchHelper.ACTION_STATE_DRAG) vh?.itemView?.setBackgroundColor(0xFF1A1A1A.toInt())
+        }
+
+        override fun clearView(rv: RecyclerView, vh: RecyclerView.ViewHolder) {
+            super.clearView(rv, vh)
+            vh.itemView.setBackgroundColor(Color.TRANSPARENT)
+            queueList.post { qAdapter.notifyDataSetChanged() } // refresh the numbers
+        }
+    })
+
+    private inner class QueueAdapter : RecyclerView.Adapter<QueueAdapter.VH>() {
+        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
+            val idx: TextView = view.findViewById(R.id.rowIdx)
+            val title: TextView = view.findViewById(R.id.rowTitle)
+            val sub: TextView = view.findViewById(R.id.rowSub)
+            val dur: TextView = view.findViewById(R.id.rowDur)
+        }
+
+        override fun getItemCount() = cur.ctrl?.mediaItemCount ?: 0
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            VH(layoutInflater.inflate(R.layout.row_track, parent, false))
+
+        override fun onBindViewHolder(h: VH, position: Int) {
+            val c = cur.ctrl ?: return
+            if (position >= c.mediaItemCount) return
+            val item = c.getMediaItemAt(position)
+            val now = position == c.currentMediaItemIndex
+            h.itemView.setBackgroundColor(Color.TRANSPARENT)
+            h.idx.text = String.format(Locale.US, "%02d", position + 1)
+            if (now) {
+                h.idx.background = oval(cur.accent)
+                h.idx.setTextColor(cur.onAccent)
+            } else {
+                h.idx.background = oval(Color.TRANSPARENT, 0xFF4A4A4A.toInt(), 1.5f)
+                h.idx.setTextColor(gray)
+            }
+            h.title.text = titleOf(item)
+            h.title.setTextColor(if (now) cur.accent else white)
+            h.sub.text = artistOf(item)
+            h.dur.text = "✕"
+            h.dur.textSize = 18f
+            h.dur.setPadding(dp(12), dp(8), dp(4), dp(8))
+            h.dur.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                val cc = cur.ctrl
+                if (p == RecyclerView.NO_POSITION || cc == null) return@setOnClickListener
+                cc.removeMediaItem(p)
+                notifyItemRemoved(p)
+                notifyItemRangeChanged(p, itemCount - p)
+                if (cc.mediaItemCount == 0) closeSheet()
+            }
+            h.itemView.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p != RecyclerView.NO_POSITION) {
+                    cur.ctrl?.seekTo(p, 0L)
+                    cur.ctrl?.play()
+                }
+            }
+            h.itemView.setOnLongClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                qTouch.startDrag(h)
+                true
+            }
+        }
     }
 
     /** A label with one subway bullet per deck. */
@@ -1251,6 +1368,7 @@ class MainActivity : Activity() {
         if (id != d.currentId) {
             d.currentId = id
             adapter.notifyDataSetChanged()
+            if (sheetOpen && sheetPage == 6 && d === cur) qAdapter.notifyDataSetChanged()
             // debounce so quick skipping never decodes artwork for songs you flew past
             ui.removeCallbacks(d.artRun)
             ui.postDelayed(d.artRun, 140)

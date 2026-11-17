@@ -476,13 +476,14 @@
             android:id="@+id/nextStop"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
             android:ellipsize="end"
             android:fontFamily="sans-serif-black"
             android:letterSpacing="0.06"
             android:maxLines="1"
             android:paddingStart="24dp"
+            android:paddingTop="8dp"
             android:paddingEnd="24dp"
+            android:paddingBottom="8dp"
             android:textColor="@color/dim"
             android:textSize="11sp" />
 
@@ -813,6 +814,48 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />
+            </LinearLayout>
+
+            <!-- deck queue -->
+            <LinearLayout
+                android:id="@+id/pageQueue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/queueBack"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="0.08"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp"
+                    android:textColor="@color/sub"
+                    android:textSize="13sp" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/queueList"
+                    android:layout_width="match_parent"
+                    android:layout_height="380dp"
+                    android:overScrollMode="never" />
+
+                <TextView
+                    android:id="@+id/btnClear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_chip"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="0.06"
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="10dp"
+                    android:text="CLEAR QUEUE"
+                    android:textColor="@color/text"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <!-- edit song info -->
