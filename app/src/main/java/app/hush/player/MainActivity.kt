@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.ComponentName
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -19,6 +20,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Size
@@ -339,6 +341,10 @@ class MainActivity : Activity() {
         v<View>(R.id.btnCover).setOnClickListener { pickCover() }
         v<View>(R.id.btnReset).setOnClickListener { resetEdit() }
         btnSave.setOnClickListener { saveEdit() }
+        v<TextView>(R.id.editSync).setOnClickListener {
+            prefs.edit().putBoolean("syncOut", !prefs.getBoolean("syncOut", true)).apply()
+            styleSync()
+        }
         buildSheetChips()
         buildAccentRows()
 
@@ -1251,6 +1257,7 @@ class MainActivity : Activity() {
         editCover.labelColor = cur.accent
         editCover.art = null
         loadArt(item.mediaId) { editCover.art = it }
+        styleSync()
         showPage(5)
     }
 
@@ -1264,6 +1271,12 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 79) {
+            val o = pendingOut
+            pendingOut = null
+            if (resultCode == RESULT_OK && o != null) updateStore(o.first, o.second, o.third)
+            return
+        }
         if (requestCode == 78) {
             val tree = data?.data
             if (resultCode == RESULT_OK && tree != null) {
@@ -1318,8 +1331,50 @@ class MainActivity : Activity() {
         if (t.isEmpty()) e.remove("t_$id") else e.putString("t_$id", t)
         if (a.isEmpty()) e.remove("a_$id") else e.putString("a_$id", a)
         e.apply()
+        if (prefs.getBoolean("syncOut", true)) writeOut(id, t, a)
         closeSheet()
         loadTracks { refreshQueues(id) }
+    }
+
+    private fun styleSync() {
+        val on = prefs.getBoolean("syncOut", true)
+        val t = v<TextView>(R.id.editSync)
+        t.text = "ALSO CHANGE IN OTHER APPS:  " + if (on) "ON" else "OFF"
+        t.setTextColor(if (on) cur.accent else gray)
+    }
+
+    private var pendingOut: Triple<String, String, String>? = null
+
+    /** Writes the new name / artist into the phone's music library so other apps see it too. */
+    private fun writeOut(id: String, t: String, a: String) {
+        if (t.isEmpty() && a.isEmpty()) return
+        val uri = ContentUris.withAppendedId(Library.audioBase(), id.toLong())
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                pendingOut = Triple(id, t, a)
+                val pi = MediaStore.createWriteRequest(contentResolver, listOf(uri))
+                startIntentSenderForResult(pi.intentSender, 79, null, 0, 0, 0)
+            } catch (e: Exception) {
+                pendingOut = null
+            }
+        } else updateStore(id, t, a)
+    }
+
+    private fun updateStore(id: String, t: String, a: String) {
+        val uri = ContentUris.withAppendedId(Library.audioBase(), id.toLong())
+        io.execute {
+            var ok = false
+            try {
+                val v = ContentValues()
+                if (t.isNotEmpty()) v.put(MediaStore.Audio.Media.TITLE, t)
+                if (a.isNotEmpty()) v.put(MediaStore.Audio.Media.ARTIST, a)
+                ok = contentResolver.update(uri, v, null, null) > 0
+            } catch (e: Exception) {
+            }
+            runOnUiThread {
+                Toast.makeText(this, if (ok) "Updated in other apps too" else "Saved in Hush only", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun resetEdit() {
