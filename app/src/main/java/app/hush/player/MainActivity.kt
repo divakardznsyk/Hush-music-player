@@ -1626,12 +1626,30 @@ class MainActivity : Activity() {
     // artwork (off the main thread): your custom cover first, then the song's own art
     // ------------------------------------------------------------------------------------------
 
+    private fun embeddedArt(uri: Uri): Bitmap? {
+        val r = android.media.MediaMetadataRetriever()
+        return try {
+            r.setDataSource(this, uri)
+            val bytes = r.embeddedPicture ?: return null
+            val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+            var n = 1
+            while (o.outWidth / n > 1024 || o.outHeight / n > 1024) n *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = n })
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { r.release() } catch (_: Exception) {}
+        }
+    }
+
     private fun loadArt(id: String, done: (Bitmap?) -> Unit) {
         val uri = ContentUris.withAppendedId(Library.audioBase(), id.toLong())
         io.execute {
             var bmp: Bitmap? = null
             val f: File = Library.coverFile(this, id)
             if (f.exists()) bmp = BitmapFactory.decodeFile(f.path)
+            if (bmp == null) bmp = embeddedArt(uri) // the cover stored inside the song file
             if (bmp == null && Build.VERSION.SDK_INT >= 29) {
                 bmp = try {
                     contentResolver.loadThumbnail(uri, Size(512, 512), null)
