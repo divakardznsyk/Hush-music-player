@@ -1643,6 +1643,68 @@ class MainActivity : Activity() {
         }
     }
 
+    /** WAV files keep their cover in an "id3 " chunk (ID3v2 APIC frame), which Android doesn't read. */
+    private fun wavArt(uri: Uri): Bitmap? = try {
+        contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+            val ch = java.io.FileInputStream(pfd.fileDescriptor).channel
+            val h = java.nio.ByteBuffer.allocate(12)
+            ch.read(h, 0)
+            if (String(h.array(), 0, 4) != "RIFF") return null
+            val c = java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            var pos = 12L
+            while (pos + 8 <= ch.size()) {
+                c.clear()
+                ch.read(c, pos)
+                val size = c.getInt(4).toLong() and 0xFFFFFFFFL
+                if (String(c.array(), 0, 4).equals("id3 ", true)) {
+                    if (size > 30_000_000) return null // shortcut: huge tag chunk, skip it
+                    val b = java.nio.ByteBuffer.allocate(size.toInt())
+                    while (b.hasRemaining() && ch.read(b, pos + 8 + b.position()) > 0) { }
+                    return id3Art(b.array())
+                }
+                pos += 8 + size + (size and 1L)
+            }
+            null
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun id3Art(d: ByteArray): Bitmap? {
+        if (d.size < 10 || String(d, 0, 3) != "ID3") return null
+        fun safe(o: Int) = (d[o].toInt() shl 21) or (d[o + 1].toInt() shl 14) or (d[o + 2].toInt() shl 7) or d[o + 3].toInt()
+        fun be(o: Int) = ((d[o].toInt() and 255) shl 24) or ((d[o + 1].toInt() and 255) shl 16) or ((d[o + 2].toInt() and 255) shl 8) or (d[o + 3].toInt() and 255)
+        val v4 = d[3].toInt() == 4
+        val end = minOf(d.size, 10 + safe(6))
+        var p = 10
+        while (p + 10 <= end) {
+            val sz = if (v4) safe(p + 4) else be(p + 4)
+            val stop = p + 10 + sz
+            if (sz <= 0 || stop > d.size) break
+            if (String(d, p, 4, Charsets.ISO_8859_1) == "APIC") {
+                val enc = d[p + 10].toInt()
+                var q = p + 11
+                while (q < stop && d[q] != 0.toByte()) q++ // mime type
+                q += 2 // its end + picture type
+                if (enc == 1 || enc == 2) {
+                    while (q + 1 < stop && !(d[q] == 0.toByte() && d[q + 1] == 0.toByte())) q += 2
+                    q += 2
+                } else {
+                    while (q < stop && d[q] != 0.toByte()) q++
+                    q++
+                }
+                if (q >= stop) return null
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(d, q, stop - q, o)
+                var n = 1
+                while (o.outWidth / n > 1024 || o.outHeight / n > 1024) n *= 2
+                return BitmapFactory.decodeByteArray(d, q, stop - q, BitmapFactory.Options().apply { inSampleSize = n })
+            }
+            p = stop
+        }
+        return null
+    }
+
     private fun loadArt(id: String, done: (Bitmap?) -> Unit) {
         val uri = ContentUris.withAppendedId(Library.audioBase(), id.toLong())
         io.execute {
@@ -1650,6 +1712,7 @@ class MainActivity : Activity() {
             val f: File = Library.coverFile(this, id)
             if (f.exists()) bmp = BitmapFactory.decodeFile(f.path)
             if (bmp == null) bmp = embeddedArt(uri) // the cover stored inside the song file
+            if (bmp == null) bmp = wavArt(uri)
             if (bmp == null && Build.VERSION.SDK_INT >= 29) {
                 bmp = try {
                     contentResolver.loadThumbnail(uri, Size(512, 512), null)
