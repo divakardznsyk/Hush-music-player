@@ -8,6 +8,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -15,10 +21,12 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.util.BitmapLoader
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import com.google.common.util.concurrent.SettableFuture
 import java.util.concurrent.Executors
 
@@ -58,6 +66,31 @@ class PlaybackService : MediaSessionService() {
         override fun onReceive(context: Context, intent: Intent) {
             setOffload(intent.action == Intent.ACTION_SCREEN_OFF)
         }
+    }
+
+    /** Gives the notification, lock screen and the phone's media widget the song's real cover. */
+    private val artPool = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+    private val artLoader = object : BitmapLoader {
+        override fun supportsMimeType(mimeType: String) = true
+
+        override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> =
+            artPool.submit<Bitmap> { BitmapFactory.decodeByteArray(data, 0, data.size) ?: placeholder() }
+
+        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> =
+            artPool.submit<Bitmap> { uri.host?.let { Library.art(this@PlaybackService, it) } ?: placeholder() }
+    }
+
+    // no cover anywhere: a small red-label disc instead of the system's grey block
+    private fun placeholder(): Bitmap {
+        val b = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        c.drawColor(Color.BLACK)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = 0xFFD71921.toInt()
+        c.drawCircle(256f, 256f, 150f, p)
+        p.color = Color.BLACK
+        c.drawCircle(256f, 256f, 14f, p)
+        return b
     }
 
     private val audioAttrs = AudioAttributes.Builder()
@@ -148,7 +181,7 @@ class PlaybackService : MediaSessionService() {
             }
         })
 
-        sessionA = MediaSession.Builder(this, player).setCallback(callbackA).build()
+        sessionA = MediaSession.Builder(this, player).setCallback(callbackA).setBitmapLoader(artLoader).build()
 
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
@@ -189,7 +222,7 @@ class PlaybackService : MediaSessionService() {
             }
         })
         prefs.edit().putBoolean("alive$key", true).apply()
-        return MediaSession.Builder(this, p).setId("deck$key").build().also { extra[key] = it }
+        return MediaSession.Builder(this, p).setId("deck$key").setBitmapLoader(artLoader).build().also { extra[key] = it }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -236,6 +269,7 @@ class PlaybackService : MediaSessionService() {
         sessionA = null
         exoA = null
         io.shutdown()
+        artPool.shutdown()
         super.onDestroy()
     }
 }
