@@ -45,6 +45,8 @@ class PlaybackService : MediaSessionService() {
     companion object {
         const val ACTION_SLEEP = "app.hush.player.SLEEP"
         const val EXTRA_MINUTES = "minutes"
+        const val ACTION_HALT = "app.hush.player.HALT"
+        const val ACTION_RESUME = "app.hush.player.RESUME"
         const val ID_B = "deckB"
         const val ID_C = "deckC"
     }
@@ -54,6 +56,7 @@ class PlaybackService : MediaSessionService() {
     private var exoA: ExoPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
+    private val wantPlay = HashSet<String>() // decks that should start as soon as their saved queue is back
     private val prefs by lazy { getSharedPreferences("hush", MODE_PRIVATE) }
 
     private val sleepRunnable = Runnable {
@@ -91,6 +94,66 @@ class PlaybackService : MediaSessionService() {
         p.color = Color.BLACK
         c.drawCircle(256f, 256f, 14f, p)
         return b
+    }
+
+    // ---- remembering each deck's queue, so nothing has to be rebuilt after the app was closed ----
+
+    private fun players(): Map<String, Player> =
+        HashMap<String, Player>().also { m ->
+            exoA?.let { m["A"] = it }
+            extra.forEach { (k, s) -> m[k] = s.player }
+        }
+
+    private fun saveQueue(key: String, p: Player) {
+        prefs.edit().putString("q$key", (0 until p.mediaItemCount).joinToString(",") { p.getMediaItemAt(it).mediaId })
+            .putInt("qi$key", p.currentMediaItemIndex).putLong("qp$key", p.currentPosition).apply()
+    }
+
+    private fun saveSpot(key: String, p: Player) {
+        prefs.edit().putInt("qi$key", p.currentMediaItemIndex).putLong("qp$key", p.currentPosition).apply()
+    }
+
+    private fun persister(key: String, p: Player) = object : Player.Listener {
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = saveQueue(key, p)
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = saveSpot(key, p)
+        override fun onIsPlayingChanged(isPlaying: Boolean) { if (!isPlaying) saveSpot(key, p) }
+    }
+
+    /** Puts the saved queue back, paused (not prepared, so it costs no battery until you press play). */
+    private fun restore(key: String, p: Player) {
+        val ids = (prefs.getString("q$key", "") ?: "").split(',').filter { it.isNotEmpty() }
+        if (ids.isEmpty()) return
+        val idx = prefs.getInt("qi$key", 0)
+        val pos = prefs.getLong("qp$key", 0L)
+        io.execute {
+            val byId = try { Library.query(this).associateBy { it.mediaId } } catch (e: Exception) { return@execute }
+            val kept = ids.mapNotNull { byId[it] }
+            if (kept.isEmpty()) return@execute
+            val at = ids.take(idx).count { byId.containsKey(it) }.coerceIn(0, kept.size - 1)
+            val items = if (key == "A") kept else kept.map {
+                val md = it.mediaMetadata
+                it.buildUpon().setMediaMetadata(
+                    md.buildUpon().setArtist("DECK $key · " + (md.extras?.getString("artist") ?: "")).build()
+                ).build()
+            }
+            handler.post {
+                if (p.mediaItemCount == 0) {
+                    p.setMediaItems(items, at, pos)
+                    if (wantPlay.remove(key)) {
+                        p.prepare()
+                        p.play()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resumeDeck(key: String) {
+        val p = (if (key == "A") exoA else ensureDeck(key).player) ?: return
+        if (p.mediaItemCount > 0) {
+            p.prepare()
+            p.play()
+        } else wantPlay.add(key) // the restore already under way will start it
     }
 
     private val audioAttrs = AudioAttributes.Builder()
@@ -181,6 +244,8 @@ class PlaybackService : MediaSessionService() {
             }
         })
 
+        player.addListener(persister("A", player))
+        restore("A", player)
         sessionA = MediaSession.Builder(this, player).setCallback(callbackA).setBitmapLoader(artLoader).build()
 
         setMediaNotificationProvider(
@@ -215,6 +280,8 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         p.repeatMode = Player.REPEAT_MODE_ALL
+        p.addListener(persister(key, p))
+        restore(key, p)
         p.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 prefs.edit().putBoolean("isPlaying$key", isPlaying).apply()
@@ -238,6 +305,19 @@ class PlaybackService : MediaSessionService() {
             if (minutes > 0) handler.postDelayed(sleepRunnable, minutes * 60_000L)
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_HALT) {
+            // everything stops, spots are saved, and the service shuts down completely
+            players().forEach { (k, p) ->
+                p.pause()
+                saveSpot(k, p)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RESUME) {
+            (intent.getStringExtra("keys") ?: "").forEach { resumeDeck(it.toString()) }
+            return START_NOT_STICKY
+        }
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -257,6 +337,7 @@ class PlaybackService : MediaSessionService() {
         prefs.edit().putBoolean("isPlaying", false).putBoolean("aliveB", false).putBoolean("aliveC", false)
             .putBoolean("isPlayingB", false).putBoolean("isPlayingC", false).apply()
         HushWidget.refresh(this)
+        players().forEach { (k, p) -> saveSpot(k, p) }
         sessionA?.run {
             player.release()
             release()

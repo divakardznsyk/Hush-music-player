@@ -238,7 +238,7 @@ class MainActivity : Activity() {
     private val ticker = object : Runnable {
         override fun run() {
             updateProgress()
-            ui.postDelayed(this, 500)
+            ui.postDelayed(this, 1000)
         }
     }
 
@@ -255,7 +255,7 @@ class MainActivity : Activity() {
         bindViews()
         loadAccents()
         favs = (prefs.getStringSet("fav", emptySet()) ?: emptySet()).toMutableSet()
-        val aliveDecks = listOf(d2, d3).filter { prefs.getBoolean("alive${nm(it)}", false) }
+        val aliveDecks = listOf(d2, d3).filter { saved(it) }
 
         list.layoutManager = LinearLayoutManager(this)
         list.adapter = adapter
@@ -282,7 +282,7 @@ class MainActivity : Activity() {
 
         val toggle = View.OnClickListener { toggleDeck(cur) }
         playBtn.setOnClickListener(toggle)
-        miniPlay.setOnClickListener { miniDeck()?.let { toggleDeck(it) } }
+        miniPlay.setOnClickListener { if (halted) unhalt() else miniDeck()?.let { toggleDeck(it) } }
         nextBtn.setOnClickListener { cur.ctrl?.seekToNext() }
         prevBtn.setOnClickListener { cur.ctrl?.seekToPrevious() }
         shuffleBtn.setOnClickListener { cur.ctrl?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
@@ -350,8 +350,13 @@ class MainActivity : Activity() {
 
         applyTheme()
         selectDeck(d1)
-        connect(d1)
-        aliveDecks.forEach { connect(it) }
+        if (!halted) {
+            connect(d1)
+            aliveDecks.forEach { connect(it) }
+        }
+        syncHalt()
+        v<View>(R.id.haltBtn).setOnClickListener { halt() }
+        v<View>(R.id.haltBtn2).setOnClickListener { halt() }
         requestAccess()
         val crash = File(filesDir, "crash.txt")
         if (crash.exists()) {
@@ -755,7 +760,7 @@ class MainActivity : Activity() {
 
     /** Tells you which deck a tap will play on. */
     private fun updateHint() {
-        reorderHint.text = "PLAYS ON DECK ${nm(cur)}"
+        reorderHint.text = if (halted) "HALTED · TAP HALT OR PLAY" else "PLAYS ON DECK ${nm(cur)}"
         reorderHint.setTextColor(cur.accent)
         reorderHint.visibility = if (shown.isNotEmpty()) View.VISIBLE else View.GONE
     }
@@ -816,7 +821,48 @@ class MainActivity : Activity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private val halted get() = prefs.getBoolean("halted", false)
+    private fun saved(d: Deck) = d.idx == 1 || !prefs.getString("q${nm(d)}", "").isNullOrEmpty()
+
+    private fun syncHalt() {
+        val c = if (halted) 0xFFD71921.toInt() else 0xFFF2F2F2.toInt()
+        v<ImageButton>(R.id.haltBtn).setColorFilter(c)
+        v<ImageButton>(R.id.haltBtn2).setColorFilter(c)
+        updateHint()
+    }
+
+    /** Stops every deck, remembers who was playing, and shuts the service down completely. */
+    private fun halt() {
+        if (halted) { unhalt(); return }
+        val keys = decks().filter { it.ctrl?.isPlaying == true }.joinToString("") { nm(it) }
+        prefs.edit().putBoolean("halted", true).putString("haltKeys", keys).apply()
+        for (d in decks()) {
+            d.ctrl?.pause()
+            d.ctrl?.removeListener(d.listener)
+            d.future?.let { MediaController.releaseFuture(it) }
+            d.ctrl = null
+            d.future = null
+            d.pending.clear()
+            d.playing = false
+        }
+        startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_HALT))
+        syncHalt()
+        syncPlay()
+    }
+
+    private fun unhalt() {
+        val keys = prefs.getString("haltKeys", "") ?: ""
+        prefs.edit().putBoolean("halted", false).apply()
+        ContextCompat.startForegroundService(
+            this, Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_RESUME).putExtra("keys", keys)
+        )
+        connect(d1)
+        decks().filter { it !== d1 && (saved(it) || keys.contains(nm(it))) }.forEach { connect(it) }
+        syncHalt()
+    }
+
     private fun toggleDeck(d: Deck) {
+        if (halted) { unhalt(); return }
         val c = d.ctrl
         when {
             c == null || c.mediaItemCount == 0 -> { selectDeck(d); closePlayer() } // empty: go add songs
@@ -876,7 +922,7 @@ class MainActivity : Activity() {
 
     private fun selectDeck(d: Deck) {
         cur = d
-        if (d.ctrl == null && prefs.getBoolean("alive${nm(d)}", false)) connect(d)
+        if (d.ctrl == null && !halted && saved(d)) connect(d)
         applyTheme()
         updateHint()
         syncTrack()
