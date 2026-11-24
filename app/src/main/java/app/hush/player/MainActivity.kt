@@ -843,7 +843,6 @@ class MainActivity : Activity() {
             d.ctrl = null
             d.future = null
             d.pending.clear()
-            d.playing = false
         }
         startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_HALT))
         syncHalt()
